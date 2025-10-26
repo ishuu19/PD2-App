@@ -7,10 +7,10 @@ from config import constants
 
 # Configure page
 st.set_page_config(
-    page_title="Portfolio Management Platform",
+    page_title="Login - Portfolio Management Platform",
     page_icon="💰",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # Initialize session state
@@ -25,8 +25,17 @@ if 'stocks_data' not in st.session_state:
 def main():
     # Check if logged in
     if not auth.is_logged_in():
+        # Hide sidebar for login page
+        st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+        </style>
+        """, unsafe_allow_html=True)
         show_login_register()
     else:
+        # Already configured at top, just show main app
         show_main_app()
 
 def show_login_register():
@@ -104,7 +113,7 @@ def show_main_app():
         st.markdown("### Portfolio Summary")
         portfolio = db.get_portfolio(auth.get_user_id())
         if portfolio:
-            st.metric("Cash Balance", f"{portfolio.get('cash_balance', 0):,.0f} HKD")
+            st.metric("Cash Balance", f"${portfolio.get('cash_balance', 0):,.0f} USD")
             
             # Calculate portfolio value if stocks data is loaded
             if st.session_state.stocks_data:
@@ -114,7 +123,7 @@ def show_main_app():
                     st.session_state.stocks_data
                 )
                 if portfolio_value:
-                    st.metric("Total Value", f"{portfolio_value.get('total_value', 0):,.0f} HKD")
+                    st.metric("Total Value", f"${portfolio_value.get('total_value', 0):,.0f} USD")
         
         st.markdown("---")
         

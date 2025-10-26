@@ -34,11 +34,11 @@ portfolio_value = portfolio_service.calculate_portfolio_value(user_id, all_stock
 
 if portfolio_value:
     with col1:
-        st.metric("Cash Balance", f"{portfolio_value.get('cash', 0):,.0f} HKD")
+        st.metric("Cash Balance", f"{portfolio_value.get('cash', 0):,.0f} USD")
     with col2:
-        st.metric("Stock Value", f"{portfolio_value.get('total_stock_value', 0):,.0f} HKD")
+        st.metric("Stock Value", f"{portfolio_value.get('total_stock_value', 0):,.0f} USD")
     with col3:
-        st.metric("Total Value", f"{portfolio_value.get('total_value', 0):,.0f} HKD")
+        st.metric("Total Value", f"{portfolio_value.get('total_value', 0):,.0f} USD")
     with col4:
         total_return = portfolio_service.calculate_portfolio_return(user_id)
         st.metric("Total Return", f"{total_return:.2f}%", delta=f"{total_return:.2f}%")
@@ -61,8 +61,8 @@ else:
     st.info("You don't have any holdings yet. Buy some stocks below!")
 
 # All Stocks Section
-st.header("Available Stocks (Hong Kong Market)")
-st.markdown("Select stocks from 20 pre-selected Hong Kong stocks to invest in.")
+st.header("Available Stocks (US Market)")
+st.markdown("Select stocks from 20 well-known US stocks to invest in.")
 
 # Filter and search
 search_term = st.text_input("🔍 Search stocks by name or ticker", key="stock_search")
@@ -106,13 +106,13 @@ with trading_tabs[0]:
         stock_data = all_stocks_data[selected_ticker]
         current_price = stock_data['current_price']
         
-        st.info(f"**{stock_data['name']} ({selected_ticker})** - Current Price: {current_price:.2f} HKD")
+        st.info(f"**{stock_data['name']} ({selected_ticker})** - Current Price: ${current_price:.2f} USD")
         
         quantity = st.number_input("Quantity", min_value=1, value=100, key="buy_quantity")
         
         total_cost = quantity * current_price
         
-        st.metric("Total Cost", f"{total_cost:,.0f} HKD")
+        st.metric("Total Cost", f"${total_cost:,.0f} USD")
         
         if st.button("🛒 Buy Stock", type="primary"):
             if portfolio_service.execute_buy(user_id, selected_ticker, current_price, quantity):
@@ -137,14 +137,14 @@ with trading_tabs[1]:
                 current_price = stock_data.get('current_price', holding['current_price'])
                 
                 st.info(f"**{holding['name']} ({selected_sell_ticker})** - You own {holding['quantity']} shares")
-                st.info(f"Current Price: {current_price:.2f} HKD")
+                st.info(f"Current Price: ${current_price:.2f} USD")
                 
                 max_quantity = int(holding['quantity'])
                 quantity = st.number_input("Quantity to Sell", min_value=1, max_value=max_quantity, value=1, key="sell_quantity")
                 
                 total_proceeds = quantity * current_price
                 
-                st.metric("Total Proceeds", f"{total_proceeds:,.0f} HKD")
+                st.metric("Total Proceeds", f"${total_proceeds:,.0f} USD")
                 
                 if st.button("💰 Sell Stock", type="primary"):
                     if portfolio_service.execute_sell(user_id, selected_sell_ticker, current_price, quantity):

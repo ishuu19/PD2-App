@@ -48,6 +48,15 @@ def get_email_from() -> str:
         pass
     return os.getenv('EMAIL_FROM', 'onboarding@resend.dev')
 
+def get_alpha_vantage_api_key() -> Optional[str]:
+    """Get Alpha Vantage API key from secrets or environment"""
+    try:
+        if hasattr(st, 'secrets') and 'ALPHA_VANTAGE_API_KEY' in st.secrets:
+            return st.secrets['ALPHA_VANTAGE_API_KEY']
+    except:
+        pass
+    return os.getenv('ALPHA_VANTAGE_API_KEY')
+
 def get_email_credentials() -> tuple[Optional[str], Optional[str]]:
     """Get email credentials from secrets or environment"""
     try:
@@ -64,5 +73,6 @@ def validate_keys() -> dict[str, bool]:
     return {
         'mongodb': get_mongodb_uri() is not None,
         'genai': get_genai_api_key() is not None,
+        'alphavantage': get_alpha_vantage_api_key() is not None,
         'resend': get_resend_api_key() is not None
     }

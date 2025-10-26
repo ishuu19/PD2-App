@@ -1,54 +1,54 @@
 """Constants and Configuration"""
 
-# 20 Pre-selected Hong Kong Stocks
+# 20 Well-known US Stocks (better Alpha Vantage support)
 HK_STOCKS = [
-    "0700.HK",  # Tencent Holdings
-    "0005.HK",  # HSBC Holdings
-    "0941.HK",  # China Mobile
-    "0388.HK",  # Hong Kong Exchanges
-    "1299.HK",  # AIA Group
-    "2318.HK",  # Ping An Insurance
-    "1398.HK",  # Industrial and Commercial Bank of China
-    "3988.HK",  # Bank of China
-    "0939.HK",  # China Construction Bank
-    "1024.HK",  # Kuaishou Technology
-    "3690.HK",  # Meituan
-    "9988.HK",  # Alibaba Group
-    "1810.HK",  # Xiaomi Corporation
-    "2388.HK",  # BOC Hong Kong Holdings
-    "2899.HK",  # Zijin Mining
-    "2269.HK",  # Midea Group
-    "2628.HK",  # China Life Insurance
-    "3328.HK",  # Bank of Communications
-    "1378.HK",  # China Hongqiao Group
-    "2330.HK",  # Power Assets Holdings
+    "AAPL",  # Apple Inc.
+    "MSFT",  # Microsoft Corporation
+    "GOOGL", # Alphabet Inc.
+    "AMZN",  # Amazon.com Inc.
+    "TSLA",  # Tesla Inc.
+    "META",  # Meta Platforms Inc.
+    "NVDA",  # NVIDIA Corporation
+    "JPM",   # JPMorgan Chase & Co.
+    "V",     # Visa Inc.
+    "JNJ",   # Johnson & Johnson
+    "WMT",   # Walmart Inc.
+    "PG",    # Procter & Gamble
+    "MA",    # Mastercard Inc.
+    "DIS",   # The Walt Disney Company
+    "BAC",   # Bank of America
+    "XOM",   # Exxon Mobil Corporation
+    "HD",    # The Home Depot
+    "UNH",   # UnitedHealth Group
+    "KO",    # The Coca-Cola Company
+    "PFE",   # Pfizer Inc.
 ]
 
 STOCK_NAMES = {
-    "0700.HK": "Tencent Holdings",
-    "0005.HK": "HSBC Holdings",
-    "0941.HK": "China Mobile",
-    "0388.HK": "Hong Kong Exchanges",
-    "1299.HK": "AIA Group",
-    "2318.HK": "Ping An Insurance",
-    "1398.HK": "ICBC",
-    "3988.HK": "Bank of China",
-    "0939.HK": "China Construction Bank",
-    "1024.HK": "Kuaishou Technology",
-    "3690.HK": "Meituan",
-    "9988.HK": "Alibaba Group",
-    "1810.HK": "Xiaomi Corporation",
-    "2388.HK": "BOC Hong Kong Holdings",
-    "2899.HK": "Zijin Mining",
-    "2269.HK": "Midea Group",
-    "2628.HK": "China Life Insurance",
-    "3328.HK": "Bank of Communications",
-    "1378.HK": "China Hongqiao Group",
-    "2330.HK": "Power Assets Holdings",
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "GOOGL": "Alphabet Inc.",
+    "AMZN": "Amazon.com Inc.",
+    "TSLA": "Tesla Inc.",
+    "META": "Meta Platforms Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "JPM": "JPMorgan Chase & Co.",
+    "V": "Visa Inc.",
+    "JNJ": "Johnson & Johnson",
+    "WMT": "Walmart Inc.",
+    "PG": "Procter & Gamble",
+    "MA": "Mastercard Inc.",
+    "DIS": "The Walt Disney Company",
+    "BAC": "Bank of America",
+    "XOM": "Exxon Mobil Corporation",
+    "HD": "The Home Depot",
+    "UNH": "UnitedHealth Group",
+    "KO": "The Coca-Cola Company",
+    "PFE": "Pfizer Inc.",
 }
 
 # Mock Trading Settings
-INITIAL_CASH = 1000000  # 1M HKD
+INITIAL_CASH = 1000000  # 1M USD
 
 # Data Refresh Settings
 STOCK_DATA_TTL = 3600  # 1 hour in seconds

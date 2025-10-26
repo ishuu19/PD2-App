@@ -1,68 +1,113 @@
-"""Yahoo Finance Data Service with Caching and Error Handling"""
-import yfinance as yf
+"""Alpha Vantage Data Service with Caching and Error Handling"""
+import requests
 import pandas as pd
 import time
 from typing import Dict, List, Optional
-from retrying import retry
+from datetime import datetime, timedelta
 import streamlit as st
 import database.models as db
+import config.api_keys as keys
 from config import constants
 
 # Rate limiting
 _last_request_time = 0
-_MIN_REQUEST_INTERVAL = 2.0  # Minimum 2 seconds between requests (30 requests per minute max)
+_MIN_REQUEST_INTERVAL = 12.1  # 5 requests per minute max (12 seconds)
 
 def _rate_limit():
-    """Rate limiting to avoid too many requests"""
+    """Rate limiting for Alpha Vantage (5 requests/minute max)"""
     global _last_request_time
     elapsed = time.time() - _last_request_time
     if elapsed < _MIN_REQUEST_INTERVAL:
         time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
     _last_request_time = time.time()
 
-@retry(stop_max_attempt_number=3, wait_exponential_multiplier=1000, wait_exponential_max=10000)
-def _fetch_ticker_safe(ticker: str) -> Optional[Dict]:
-    """Fetch ticker data with retry logic"""
+def _fetch_ticker_alphavantage(ticker: str) -> Optional[Dict]:
+    """Fetch ticker data from Alpha Vantage API"""
     try:
         _rate_limit()
-        stock = yf.Ticker(ticker)
-        info = stock.info
         
-        # Get historical data
-        hist = stock.history(period="1y")
-        
-        if hist.empty or not info:
+        api_key = keys.get_alpha_vantage_api_key()
+        if not api_key:
+            st.error("Alpha Vantage API key not configured")
             return None
         
-        # Calculate metrics
-        current_price = info.get('currentPrice', hist['Close'].iloc[-1])
-        prev_close = info.get('previousClose', current_price)
-        change_pct = ((current_price - prev_close) / prev_close * 100) if prev_close else 0
+        # Get daily time series data (using free endpoint)
+        url = "https://www.alphavantage.co/query"
+        params = {
+            'function': 'TIME_SERIES_DAILY',
+            'symbol': ticker,
+            'apikey': api_key,
+            'outputsize': 'full'
+        }
+        
+        response = requests.get(url, params=params, timeout=30)
+        
+        if response.status_code != 200:
+            st.error(f"Error fetching {ticker}: HTTP {response.status_code}")
+            return None
+        
+        data = response.json()
+        
+        # Check for API errors
+        if 'Error Message' in data:
+            st.error(f"Alpha Vantage error for {ticker}: {data['Error Message']}")
+            return None
+        
+        if 'Note' in data:
+            st.error(f"Rate limit exceeded for {ticker}")
+            return None
+        
+        if 'Time Series (Daily)' not in data:
+            st.error(f"No data returned for {ticker}")
+            return None
+        
+        time_series = data['Time Series (Daily)']
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(time_series).T
+        df.columns = ['open', 'high', 'low', 'close', 'volume']
+        
+        # Convert to numeric
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        df = df.sort_index()
+        
+        if df.empty:
+            return None
+        
+        # Calculate metrics (use 'close' instead of 'adjusted_close')
+        current_price = df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2] if len(df) > 1 else current_price
+        change_pct = ((current_price - prev_close) / prev_close * 100) if prev_close > 0 else 0
         
         # Calculate historical returns
-        returns_1m = hist['Close'].pct_change(20).iloc[-1] * 100 if len(hist) > 20 else 0
-        returns_3m = hist['Close'].pct_change(60).iloc[-1] * 100 if len(hist) > 60 else 0
-        returns_6m = hist['Close'].pct_change(120).iloc[-1] * 100 if len(hist) > 120 else 0
-        returns_1y = hist['Close'].pct_change(252).iloc[-1] * 100 if len(hist) > 252 else 0
+        returns_1m = df['close'].pct_change(20).iloc[-1] * 100 if len(df) > 20 else 0
+        returns_3m = df['close'].pct_change(60).iloc[-1] * 100 if len(df) > 60 else 0
+        returns_6m = df['close'].pct_change(120).iloc[-1] * 100 if len(df) > 120 else 0
+        returns_1y = df['close'].pct_change(252).iloc[-1] * 100 if len(df) > 252 else 0
         
         # Volatility (annualized)
-        volatility = hist['Close'].pct_change().std() * (252 ** 0.5) * 100
+        volatility = df['close'].pct_change().std() * (252 ** 0.5) * 100
         
         # 52-week high/low
-        high_52w = hist['High'].max()
-        low_52w = hist['Low'].min()
+        high_52w = df['high'].tail(252).max() if len(df) >= 252 else df['high'].max()
+        low_52w = df['low'].tail(252).min() if len(df) >= 252 else df['low'].min()
         
-        data = {
+        # Get stock info (basic from ticker name)
+        stock_name = constants.STOCK_NAMES.get(ticker, ticker)
+        
+        result_data = {
             'ticker': ticker,
-            'name': info.get('longName', ticker),
+            'name': stock_name,
             'current_price': current_price,
             'previous_close': prev_close,
             'change_percent': round(change_pct, 2),
-            'volume': info.get('volume', hist['Volume'].iloc[-1]),
-            'market_cap': info.get('marketCap', 0),
-            'pe_ratio': info.get('trailingPE', 0),
-            'dividend_yield': info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0,
-            'beta': info.get('beta', 1.0),
+            'volume': int(df['volume'].iloc[-1]),
+            'market_cap': 0,  # Alpha Vantage free tier doesn't provide this
+            'pe_ratio': 0,  # Alpha Vantage free tier doesn't provide this
+            'dividend_yield': 0,  # Can calculate if needed
+            'beta': 1.0,  # Default
             'volatility': round(volatility, 2),
             'high_52w': high_52w,
             'low_52w': low_52w,
@@ -70,15 +115,15 @@ def _fetch_ticker_safe(ticker: str) -> Optional[Dict]:
             'returns_3m': round(returns_3m, 2),
             'returns_6m': round(returns_6m, 2),
             'returns_1y': round(returns_1y, 2),
-            'historical': hist,
-            'sector': info.get('sector', 'Unknown'),
-            'industry': info.get('industry', 'Unknown')
+            'historical': df[['open', 'high', 'low', 'close', 'volume']].tail(252),  # Keep 1 year for charts
+            'sector': 'Unknown',
+            'industry': 'Unknown'
         }
         
-        return data
+        return result_data
         
     except Exception as e:
-        st.error(f"Error fetching {ticker}: {str(e)}")
+        st.error(f"Error fetching {ticker} from Alpha Vantage: {str(e)}")
         return None
 
 def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
@@ -95,7 +140,7 @@ def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
         return st.session_state[cache_key]
     
     # Fetch from API
-    data = _fetch_ticker_safe(ticker)
+    data = _fetch_ticker_alphavantage(ticker)
     
     if data:
         # Cache in session state
