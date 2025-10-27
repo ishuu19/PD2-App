@@ -146,7 +146,6 @@ The Investor's Team
         return True
             
     except Exception as e:
-        print(f"Error sending alert email: {str(e)}")
         return False
 
 

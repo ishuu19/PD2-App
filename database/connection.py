@@ -21,7 +21,6 @@ def get_client() -> Optional[MongoClient]:
     
     uri = keys.get_mongodb_uri()
     if not uri:
-        print("❌ MongoDB URI not found in secrets or environment variables")
         return None
     
     try:
@@ -33,10 +32,8 @@ def get_client() -> Optional[MongoClient]:
         )
         # Test connection
         _client.admin.command('ping')
-        print("✅ MongoDB connection established successfully")
         return _client
     except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-        print(f"❌ MongoDB connection failed: {str(e)}")
         return None
 
 def get_database(db_name: str = "portfolio_management"):
@@ -45,10 +42,8 @@ def get_database(db_name: str = "portfolio_management"):
     client = get_client()
     if client:
         _db = client[db_name]
-        print(f"✅ Connected to MongoDB database: {db_name}")
         return _db
     else:
-        print(f"❌ Failed to connect to MongoDB database: {db_name}")
         return None
 
 def close_connection():
