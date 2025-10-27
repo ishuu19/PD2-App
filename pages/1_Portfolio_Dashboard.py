@@ -8,6 +8,7 @@ import services.stock_data as stock_service
 import services.portfolio_service as portfolio_service
 import services.ai_service as ai_service
 import utils.charts as charts
+import components.chatbot as chatbot
 from config import constants
 
 # Show API usage stats
@@ -17,6 +18,10 @@ stock_service.show_api_usage_stats()
 if not auth.is_logged_in():
     st.error("Please login to access the portfolio dashboard")
     st.stop()
+
+# Show chatbot popup if opened
+if st.session_state.get('chatbot_open', False):
+    chatbot.render_chatbot_popup()
 
 st.title("📊 Portfolio Dashboard")
 

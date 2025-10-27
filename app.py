@@ -147,9 +147,20 @@ def show_main_app():
         
         st.markdown("---")
         
+        # Chatbot toggle button
+        if st.button("💬 AI Assistant", use_container_width=True, help="Open AI Chatbot"):
+            st.session_state.chatbot_open = True
+            st.rerun()
+        
+        st.markdown("---")
+        
         if st.button("🚪 Logout", use_container_width=True):
             auth.logout_user()
             st.rerun()
+    
+    # Show chatbot popup if opened
+    if st.session_state.get('chatbot_open', False):
+        chatbot.render_chatbot_popup()
     
     # Main content - Dashboard
     st.title("📊 Dashboard")
@@ -166,11 +177,18 @@ def show_main_app():
         st.info("⏳ Loading market data... Please wait.")
         st.stop()
     
-    col1, col2 = st.columns([3, 1])
+    # Search box with better alignment (no white box)
+    col1, col2 = st.columns([4, 1])
     with col1:
-        ticker_input = st.text_input("Enter Stock Ticker", key="main_ticker_search", placeholder="e.g., AAPL, MSFT, GOOGL")
+        ticker_input = st.text_input(
+            "Enter Stock Ticker", 
+            key="main_ticker_search", 
+            placeholder="e.g., AAPL, MSFT, GOOGL",
+            help="Enter a stock symbol to search for detailed information"
+        )
     with col2:
-        search_button = st.button("Search", use_container_width=True, type="primary")
+        st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
+        search_button = st.button("🔍 Search", use_container_width=True, type="primary")
     
     # Handle search
     if search_button and ticker_input:
