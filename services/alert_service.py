@@ -1,20 +1,21 @@
-"""Email Alert Service using Resend API"""
-import requests
+"""Email Alert Service using Gmail SMTP"""
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import config.api_keys as keys
 import services.ai_service as ai_service
 import services.stock_data as stock_data
 
 def send_alert_email(user_email: str, ticker: str, criteria: str, threshold: float, 
                     stock_data_dict: dict, alert_details: dict = None) -> bool:
-    """Send alert email using Resend API"""
-    
-    resend_key = keys.get_resend_api_key()
-    email_from = keys.get_email_from()
-    
-    if not resend_key:
-        return False
+    """Send alert email using Gmail SMTP"""
     
     try:
+        # Get Gmail credentials and SMTP config
+        gmail_user, gmail_password = keys.get_gmail_credentials()
+        smtp_config = keys.get_gmail_smtp_config()
+        
         # Generate AI email content
         email_content = ai_service.generate_email_content(
             criteria, stock_data_dict, alert_details or {}
@@ -31,19 +32,21 @@ def send_alert_email(user_email: str, ticker: str, criteria: str, threshold: flo
         .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                   color: white; padding: 20px; border-radius: 10px 10px 0 0; }}
         .content {{ background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }}
-        .stock-info {{ background: white; padding: 15px; margin: 15px 0; 
-                      border-left: 4px solid #667eea; }}
-        .stats {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; 
-                 margin-top: 15px; }}
-        .stat {{ background: white; padding: 10px; text-align: center; 
-                border-radius: 5px; }}
-        .stat-value {{ font-size: 20px; font-weight: bold; color: #667eea; }}
+        .stock-card {{ background: white; padding: 20px; margin: 15px 0; 
+                      border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .alert-badge {{ background: #ff4444; color: white; padding: 8px 16px; 
+                       border-radius: 20px; display: inline-block; 
+                       margin-bottom: 15px; font-weight: bold; }}
+        .stock-name {{ font-size: 24px; font-weight: bold; color: #333; margin-bottom: 10px; }}
+        .current-price {{ font-size: 32px; font-weight: bold; color: #667eea; margin: 10px 0; }}
+        .stats {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; 
+                 margin-top: 20px; }}
+        .stat {{ background: #f8f9fa; padding: 15px; text-align: center; 
+                border-radius: 8px; border: 1px solid #e9ecef; }}
+        .stat-value {{ font-size: 18px; font-weight: bold; color: #667eea; }}
         .stat-label {{ font-size: 12px; color: #666; margin-top: 5px; }}
         .footer {{ text-align: center; padding: 20px; color: #666; 
                   font-size: 12px; }}
-        .alert-badge {{ background: #ff4444; color: white; padding: 5px 15px; 
-                       border-radius: 20px; display: inline-block; 
-                       margin-bottom: 15px; }}
     </style>
 </head>
 <body>
@@ -58,11 +61,9 @@ def send_alert_email(user_email: str, ticker: str, criteria: str, threshold: flo
             <p><strong>Alert Criteria:</strong> {criteria.replace('_', ' ').title()}</p>
             <p><strong>Threshold:</strong> {threshold}</p>
             
-            <div class="stock-info">
-                <h2>{stock_data_dict.get('name', '')} ({ticker})</h2>
-                <p style="font-size: 24px; font-weight: bold; color: #667eea;">
-                    Current Price: ${stock_data_dict.get('current_price', 'N/A'):.2f}
-                </p>
+            <div class="stock-card">
+                <div class="stock-name">{stock_data_dict.get('name', '')} ({ticker})</div>
+                <div class="current-price">${stock_data_dict.get('current_price', 'N/A'):.2f}</div>
                 
                 <div class="stats">
                     <div class="stat">
@@ -83,19 +84,10 @@ def send_alert_email(user_email: str, ticker: str, criteria: str, threshold: flo
                     </div>
                 </div>
             </div>
-            
-            <div style="background: white; padding: 15px; margin-top: 15px;">
-                <h3>AI Analysis</h3>
-                <p>{email_content.replace(chr(10), '<br>')}</p>
-            </div>
-            
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #ddd;">
-                <p><strong>Action Required:</strong> Review this stock's performance and decide if you want to take any action on your portfolio.</p>
-            </div>
         </div>
         
         <div class="footer">
-            <p>This is an automated alert from your Portfolio Management Platform.</p>
+            <p>This is an automated alert from Investor's COMP4145.</p>
             <p>Please do not reply to this email.</p>
         </div>
     </div>
@@ -103,27 +95,55 @@ def send_alert_email(user_email: str, ticker: str, criteria: str, threshold: flo
 </html>
 """
         
-        # Send email via Resend API
-        url = "https://api.resend.com/emails"
-        headers = {
-            "Authorization": f"Bearer {resend_key}",
-            "Content-Type": "application/json"
-        }
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = gmail_user
+        msg['To'] = user_email
+        msg['Subject'] = f"🚨 Alert: {stock_data_dict.get('name', ticker)} - {criteria.replace('_', ' ').title()}"
         
-        payload = {
-            "from": email_from,
-            "to": user_email,
-            "subject": f"🚨 Alert: {stock_data_dict.get('name', ticker)} - {criteria.replace('_', ' ').title()}",
-            "html": html_content
-        }
+        # Create plain text version
+        text_content = f"""
+Hi {user_email.split('@')[0]},
+
+We are sending you the alert set by you in Investor's COMP4145.
+
+Stock Alert Triggered
+Your portfolio alert has been activated
+
+⚠️ ALERT ACTIVE
+Alert Criteria: {criteria.replace('_', ' ').title()}
+Threshold: {threshold}
+
+{stock_data_dict.get('name', '')} ({ticker})
+Current Price: ${stock_data_dict.get('current_price', 'N/A'):.2f}
+
+{stock_data_dict.get('change_percent', 0):.2f}% Daily Change
+{stock_data_dict.get('volume', 0):,} Volume
+{stock_data_dict.get('pe_ratio', 'N/A')} P/E Ratio
+{stock_data_dict.get('beta', 'N/A')} Beta
+
+Hope this helps
+
+Best regards,
+The Investor's Team
+"""
         
-        response = requests.post(url, json=payload, headers=headers)
+        # Attach parts
+        text_part = MIMEText(text_content, 'plain')
+        html_part = MIMEText(html_content, 'html')
         
-        if response.status_code == 200:
-            return True
-        else:
-            print(f"Resend API error: {response.status_code} - {response.text}")
-            return False
+        msg.attach(text_part)
+        msg.attach(html_part)
+        
+        # Send email via Gmail SMTP
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_config['smtp_server'], smtp_config['smtp_port']) as server:
+            if smtp_config['use_tls']:
+                server.starttls(context=context)
+            server.login(gmail_user, gmail_password)
+            server.send_message(msg)
+        
+        return True
             
     except Exception as e:
         print(f"Error sending alert email: {str(e)}")
@@ -162,12 +182,22 @@ def check_alert_criteria(stock_data: dict, criteria: str, threshold: float) -> b
     """Check if alert criteria is met"""
     
     criteria_map = {
-        'price_above': lambda data, t: data.get('current_price', 0) > t,
-        'price_below': lambda data, t: data.get('current_price', 0) < t,
-        'percent_change_daily': lambda data, t: abs(data.get('change_percent', 0)) > t,
-        'volume_spike': lambda data, t: data.get('volume', 0) > t,
-        'rsi_overbought': lambda data, t: data.get('rsi', 50) > t,
-        'rsi_oversold': lambda data, t: data.get('rsi', 50) < t,
+        'Price above threshold': lambda data, t: data.get('current_price', 0) > t,
+        'Price below threshold': lambda data, t: data.get('current_price', 0) < t,
+        'Daily % change > X%': lambda data, t: data.get('change_percent', 0) > t,
+        'Daily % change < -X%': lambda data, t: data.get('change_percent', 0) < -t,
+        'Weekly % change > X%': lambda data, t: data.get('returns_1m', 0) > t,
+        'Monthly % change > X%': lambda data, t: data.get('returns_3m', 0) > t,
+        'Volume spike (> 2x average)': lambda data, t: data.get('volume', 0) > t,
+        'RSI overbought (> 70)': lambda data, t: data.get('rsi', 50) > t,
+        'RSI oversold (< 30)': lambda data, t: data.get('rsi', 50) < t,
+        'MACD bullish crossover': lambda data, t: data.get('macd', 0) > 0,
+        'MACD bearish crossover': lambda data, t: data.get('macd', 0) < 0,
+        'Moving average golden cross': lambda data, t: data.get('ma_golden_cross', False),
+        'Moving average death cross': lambda data, t: data.get('ma_death_cross', False),
+        'Bollinger band upper break': lambda data, t: data.get('bb_upper_break', False),
+        'Bollinger band lower break': lambda data, t: data.get('bb_lower_break', False),
+        'Portfolio value milestone': lambda data, t: data.get('portfolio_value', 0) > t,
     }
     
     check_func = criteria_map.get(criteria)

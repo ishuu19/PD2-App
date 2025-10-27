@@ -4,6 +4,7 @@ import time
 import utils.auth as auth
 import database.models as db
 import services.stock_data as stock_service
+import services.scheduler_service as scheduler_service
 import components.chatbot as chatbot
 from config import constants
 
@@ -14,6 +15,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize automated scheduler
+scheduler_service.start_automated_scheduler()
 
 # Session state is managed by individual pages and services
 

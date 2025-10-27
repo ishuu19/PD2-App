@@ -245,6 +245,37 @@ def delete_alert(alert_id: str) -> bool:
     db.alerts.delete_one({"_id": ObjectId(alert_id)})
     return True
 
+def get_users_with_active_alerts() -> List[Dict]:
+    """Get all users who have active alerts"""
+    db = conn.get_database()
+    if db is None:
+        return []
+    
+    try:
+        # Get distinct user_ids from active alerts
+        user_ids = db.alerts.distinct("user_id", {"active": True})
+        users = []
+        
+        for user_id in user_ids:
+            try:
+                # Convert string user_id to ObjectId
+                user_object_id = ObjectId(user_id)
+                user = db.users.find_one({"_id": user_object_id})
+                if user:
+                    users.append({
+                        "_id": user_id,
+                        "email": user.get("email"),
+                        "username": user.get("username")
+                    })
+            except Exception as e:
+                print(f"Error converting user_id {user_id} to ObjectId: {e}")
+                continue
+        
+        return users
+    except Exception as e:
+        print(f"Error in get_users_with_active_alerts: {e}")
+        return []
+
 def update_alert_last_triggered(alert_id: str):
     """Update last triggered timestamp"""
     db = conn.get_database()

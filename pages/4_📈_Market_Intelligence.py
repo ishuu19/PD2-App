@@ -102,29 +102,6 @@ with risk_col3:
     st.metric("Value at Risk (99%)", "-8.1%")
     st.metric("Sortino Ratio", "1.15")
 
-# Sentiment Analysis
-st.header("📰 News Sentiment Analysis")
-if st.button("Analyze News Sentiment", type="primary"):
-    with st.spinner("📰 Analyzing news sentiment... This may take a moment."):
-        try:
-            # Simulate sentiment analysis
-            sentiment_data = []
-            for ticker, stock_data in list(all_stocks_data.items())[:5]:  # Analyze first 5 stocks
-                if stock_data:
-                    sentiment = ai_service.get_ai_response(
-                        f"Analyze news sentiment for {stock_data['name']} based on recent performance: {stock_data.get('returns_1m', 0)}% change.",
-                        "You are a financial news analyst. Provide sentiment (positive/negative/neutral) with a brief explanation."
-                    )
-                    sentiment_data.append({
-                        'Stock': stock_data['name'],
-                        'Sentiment': sentiment[:50] + "..."
-                    })
-            
-            sentiment_df = pd.DataFrame(sentiment_data)
-            st.dataframe(sentiment_df, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error analyzing news sentiment: {str(e)}")
-
 # Market Charts
 st.header("Market Charts")
 chart_col1, chart_col2 = st.columns(2)

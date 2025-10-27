@@ -160,7 +160,7 @@ def _fetch_single_stock_yfinance(ticker: str) -> Optional[Dict]:
         
         if data.empty:
             return None
-        
+            
         df = data.copy()
         
         # Rename columns to lowercase

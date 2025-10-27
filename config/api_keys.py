@@ -107,6 +107,18 @@ def get_email_credentials() -> tuple[Optional[str], Optional[str]]:
         pass
     return os.getenv('EMAIL_USER'), os.getenv('EMAIL_PASSWORD')
 
+def get_gmail_credentials() -> tuple[str, str]:
+    """Get Gmail credentials - using hardcoded values for demo"""
+    return "iammistermiss@gmail.com", "yeme nxvn wrrt leto"
+
+def get_gmail_smtp_config() -> dict:
+    """Get Gmail SMTP configuration"""
+    return {
+        'smtp_server': 'smtp.gmail.com',
+        'smtp_port': 587,
+        'use_tls': True
+    }
+
 def validate_keys() -> dict[str, bool]:
     """Validate all required API keys are present"""
     return {
