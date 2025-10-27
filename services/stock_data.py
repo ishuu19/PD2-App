@@ -14,18 +14,9 @@ if not os.path.exists('.yfinance_cache'):
     os.makedirs('.yfinance_cache')
 
 def _load_stock_from_csv(ticker: str) -> Optional[pd.DataFrame]:
-    """Load stock data from CSV file"""
-    csv_path = f"data/{ticker}_daily.csv"
-    if os.path.exists(csv_path):
-        try:
-            df = pd.read_csv(csv_path)
-            df['Date'] = pd.to_datetime(df['Date'])
-            df = df.set_index('Date')
-            # Rename columns to lowercase
-            df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
-            return df
-        except Exception as e:
-            print(f"Error loading {ticker} from CSV: {e}")
+    """Load stock data from CSV file (disabled for deployment)"""
+    # CSV loading disabled for Streamlit Cloud deployment
+    # to avoid inotify watch limit issues
     return None
 
 def _download_top_stocks_data():
