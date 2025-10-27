@@ -6,9 +6,9 @@ HK_STOCKS = [
     "MSFT",  # Microsoft Corporation
     "GOOGL", # Alphabet Inc.
     "AMZN",  # Amazon.com Inc.
-    "TSLA",  # Tesla Inc.
+    "NKE",   # Nike Inc.
     "META",  # Meta Platforms Inc.
-    "NVDA",  # NVIDIA Corporation
+    "INTC",  # Intel Corporation
     "JPM",   # JPMorgan Chase & Co.
     "V",     # Visa Inc.
     "JNJ",   # Johnson & Johnson
@@ -16,12 +16,12 @@ HK_STOCKS = [
     "PG",    # Procter & Gamble
     "MA",    # Mastercard Inc.
     "DIS",   # The Walt Disney Company
-    "BAC",   # Bank of America
+    "NFLX",  # Netflix Inc.
     "XOM",   # Exxon Mobil Corporation
     "HD",    # The Home Depot
-    "UNH",   # UnitedHealth Group
+    "CSCO",  # Cisco Systems Inc.
     "KO",    # The Coca-Cola Company
-    "PFE",   # Pfizer Inc.
+    "CMCSA", # Comcast Corporation
 ]
 
 STOCK_NAMES = {
@@ -29,9 +29,9 @@ STOCK_NAMES = {
     "MSFT": "Microsoft Corporation",
     "GOOGL": "Alphabet Inc.",
     "AMZN": "Amazon.com Inc.",
-    "TSLA": "Tesla Inc.",
+    "NKE": "Nike Inc.",
     "META": "Meta Platforms Inc.",
-    "NVDA": "NVIDIA Corporation",
+    "INTC": "Intel Corporation",
     "JPM": "JPMorgan Chase & Co.",
     "V": "Visa Inc.",
     "JNJ": "Johnson & Johnson",
@@ -39,12 +39,12 @@ STOCK_NAMES = {
     "PG": "Procter & Gamble",
     "MA": "Mastercard Inc.",
     "DIS": "The Walt Disney Company",
-    "BAC": "Bank of America",
+    "NFLX": "Netflix Inc.",
     "XOM": "Exxon Mobil Corporation",
     "HD": "The Home Depot",
-    "UNH": "UnitedHealth Group",
+    "CSCO": "Cisco Systems Inc.",
     "KO": "The Coca-Cola Company",
-    "PFE": "Pfizer Inc.",
+    "CMCSA": "Comcast Corporation",
 }
 
 # Mock Trading Settings

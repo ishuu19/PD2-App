@@ -57,28 +57,44 @@ def get_email_from() -> str:
         pass
     return os.getenv('EMAIL_FROM', 'onboarding@resend.dev')
 
-def get_alpha_vantage_api_key() -> Optional[str]:
-    """Get Alpha Vantage API key from secrets or environment (single key)"""
+# Finnhub API Functions (replacing Alpha Vantage)
+def get_finnhub_api_keys() -> list[str]:
+    """Get list of Finnhub API keys"""
+    # Default keys provided by user
+    default_keys = [
+        'd3umblhr01qil4aqpgj0d3umblhr01qil4aqpgjg',
+        'd3vo1thr01qhm1te7m50d3vo1thr01qhm1te7m5g',
+        'd3vo27hr01qhm1te7nogd3vo27hr01qhm1te7np0',
+        'd3vo2gpr01qhm1te7p30d3vo2gpr01qhm1te7p3g',
+        'd3vo34hr01qhm1te7ru0d3vo34hr01qhm1te7rug',
+        'd3vo3b1r01qhm1te7sugd3vo3b1r01qhm1te7sv0',
+        'd3vo3gpr01qhm1te7tngd3vo3gpr01qhm1te7to0',
+        'd3vo3l9r01qhm1te7ub0d3vo3l9r01qhm1te7ubg',
+        'd3vo3r1r01qhm1te7v8gd3vo3r1r01qhm1te7v90',
+        'd3vo40pr01qhm1te8030d3vo40pr01qhm1te803g'
+    ]
+    
     try:
-        if hasattr(st, 'secrets') and 'ALPHA_VANTAGE_API_KEY' in st.secrets:
-            return st.secrets['ALPHA_VANTAGE_API_KEY']
-    except:
-        pass
-    return os.getenv('ALPHA_VANTAGE_API_KEY')
-
-def get_alpha_vantage_api_keys() -> list[str]:
-    """Get list of Alpha Vantage API keys from secrets"""
-    try:
-        if hasattr(st, 'secrets') and 'ALPHA_VANTAGE_KEYS' in st.secrets:
-            keys = st.secrets['ALPHA_VANTAGE_KEYS']
+        if hasattr(st, 'secrets') and 'FINNHUB_KEYS' in st.secrets:
+            keys = st.secrets['FINNHUB_KEYS']
             if isinstance(keys, list) and len(keys) > 0:
                 return keys
+        elif hasattr(st, 'secrets') and 'FINNHUB_API_KEY' in st.secrets:
+            return [st.secrets['FINNHUB_API_KEY']]
     except:
         pass
     
-    # Fallback to single key if list not available
-    single_key = get_alpha_vantage_api_key()
-    return [single_key] if single_key else []
+    # Check environment variables
+    env_keys = os.getenv('FINNHUB_KEYS')
+    if env_keys:
+        return env_keys.split(',')
+    
+    env_key = os.getenv('FINNHUB_API_KEY')
+    if env_key:
+        return [env_key]
+    
+    # Return default keys
+    return default_keys
 
 def get_email_credentials() -> tuple[Optional[str], Optional[str]]:
     """Get email credentials from secrets or environment"""
@@ -96,7 +112,6 @@ def validate_keys() -> dict[str, bool]:
     return {
         'mongodb': get_mongodb_uri() is not None,
         'genai': get_genai_api_key() is not None,
-        'alphavantage': get_alpha_vantage_api_key() is not None,
-        'alphavantage_keys': len(get_alpha_vantage_api_keys()) > 0,
+        'finnhub': len(get_finnhub_api_keys()) > 0,
         'resend': get_resend_api_key() is not None
     }

@@ -1,260 +1,265 @@
-"""Alpha Vantage Data Service with Caching and Error Handling"""
-import requests
+"""Stock Data Service with yfinance - 5+ Years Historical Data"""
+import yfinance as yf
 import pandas as pd
 import time
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import streamlit as st
 import database.models as db
-import config.api_keys as keys
 from config import constants
+import os
 
-# Rate limiting
-_last_request_time = 0
-_MIN_REQUEST_INTERVAL = 12.1  # 5 requests per minute max (12 seconds)
+# Create cache directory for storing data
+if not os.path.exists('.yfinance_cache'):
+    os.makedirs('.yfinance_cache')
 
-def _rate_limit():
-    """Rate limiting for Alpha Vantage (5 requests/minute max)"""
-    global _last_request_time
-    elapsed = time.time() - _last_request_time
-    if elapsed < _MIN_REQUEST_INTERVAL:
-        time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
-    _last_request_time = time.time()
-
-def _get_random_api_key() -> str:
-    """Get a random API key from the list of available keys"""
-    try:
-        import random
-        api_keys = keys.get_alpha_vantage_api_keys()
-        if api_keys and len(api_keys) > 0:
-            return random.choice(api_keys)
-        else:
-            return keys.get_alpha_vantage_api_key()  # Fallback to single key
-    except:
-        return keys.get_alpha_vantage_api_key()  # Fallback to single key
-
-def _log_api_usage(api_key: str, ticker: str, success: bool):
-    """Log API key usage for monitoring"""
-    if 'api_usage_log' not in st.session_state:
-        st.session_state.api_usage_log = {}
-    
-    key_short = api_key[:8] + "..."
-    if key_short not in st.session_state.api_usage_log:
-        st.session_state.api_usage_log[key_short] = {'success': 0, 'failed': 0, 'tickers': set()}
-    
-    if success:
-        st.session_state.api_usage_log[key_short]['success'] += 1
-    else:
-        st.session_state.api_usage_log[key_short]['failed'] += 1
-    
-    st.session_state.api_usage_log[key_short]['tickers'].add(ticker)
-
-def _fetch_ticker_alphavantage(ticker: str, max_retries: int = 3) -> Optional[Dict]:
-    """Fetch ticker data from Alpha Vantage API with random key selection and retry logic"""
-    api_keys = keys.get_alpha_vantage_api_keys()
-    
-    if not api_keys:
-        st.error("No Alpha Vantage API keys configured")
-        return None
-    
-    # Debug mode check (use session state to avoid duplicate widgets)
-    if 'debug_api_keys_global' not in st.session_state:
-        st.session_state.debug_api_keys_global = False
-    debug_mode = st.session_state.debug_api_keys_global
-    
-    # Try with different API keys if one fails
-    for attempt in range(max_retries):
+def _load_stock_from_csv(ticker: str) -> Optional[pd.DataFrame]:
+    """Load stock data from CSV file"""
+    csv_path = f"data/{ticker}_daily.csv"
+    if os.path.exists(csv_path):
         try:
-            _rate_limit()
-            
-            # Get a random API key from the pool
-            api_key = api_keys[attempt % len(api_keys)]  # Cycle through keys
-            
-            # Show debug info if enabled
-            if debug_mode:
-                st.sidebar.write(f"Attempt {attempt + 1}: Using API key: {api_key[:8]}...")
-            
-            # Log API key usage
-            _log_api_usage(api_key, ticker, False)  # Will be updated to True if successful
-            
-            # Get daily time series data (using free endpoint)
-            url = "https://www.alphavantage.co/query"
-            params = {
-                'function': 'TIME_SERIES_DAILY',
-                'symbol': ticker,
-                'apikey': api_key,
-                'outputsize': 'full'
-            }
-            
-            response = requests.get(url, params=params, timeout=30)
-            
-            if response.status_code != 200:
-                if attempt < max_retries - 1:
-                    continue  # Try next API key
-                st.error(f"Error fetching {ticker}: HTTP {response.status_code}")
-                return None
-            
-            data = response.json()
-            
-            # Check for API errors
-            if 'Error Message' in data:
-                if attempt < max_retries - 1:
-                    continue  # Try next API key
-                st.error(f"Alpha Vantage error for {ticker}: {data['Error Message']}")
-                return None
-            
-            if 'Note' in data:
-                if attempt < max_retries - 1:
-                    continue  # Try next API key
-                st.error(f"Rate limit exceeded for {ticker}")
-                return None
-            
-            if 'Time Series (Daily)' not in data:
-                if attempt < max_retries - 1:
-                    continue  # Try next API key
-                st.error(f"No data returned for {ticker}")
-                return None
-            
-            # If we reach here, we have valid data
-            _log_api_usage(api_key, ticker, True)  # Update to successful
-            time_series = data['Time Series (Daily)']
-            
-            # Convert to DataFrame
-            df = pd.DataFrame(time_series).T
-            df.columns = ['open', 'high', 'low', 'close', 'volume']
-            
-            # Convert to numeric
-            for col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            df = df.sort_index()
-            
-            if df.empty:
-                return None
-            
-            # Calculate metrics (use 'close' instead of 'adjusted_close')
-            current_price = df['close'].iloc[-1]
-            prev_close = df['close'].iloc[-2] if len(df) > 1 else current_price
-            change_pct = ((current_price - prev_close) / prev_close * 100) if prev_close > 0 else 0
-            
-            # Calculate historical returns
-            returns_1m = df['close'].pct_change(20).iloc[-1] * 100 if len(df) > 20 else 0
-            returns_3m = df['close'].pct_change(60).iloc[-1] * 100 if len(df) > 60 else 0
-            returns_6m = df['close'].pct_change(120).iloc[-1] * 100 if len(df) > 120 else 0
-            returns_1y = df['close'].pct_change(252).iloc[-1] * 100 if len(df) > 252 else 0
-            
-            # Volatility (annualized)
-            volatility = df['close'].pct_change().std() * (252 ** 0.5) * 100
-            
-            # 52-week high/low
-            high_52w = df['high'].tail(252).max() if len(df) >= 252 else df['high'].max()
-            low_52w = df['low'].tail(252).min() if len(df) >= 252 else df['low'].min()
-            
-            # Get stock info (basic from ticker name)
-            stock_name = constants.STOCK_NAMES.get(ticker, ticker)
-            
-            result_data = {
-                'ticker': ticker,
-                'name': stock_name,
-                'current_price': current_price,
-                'previous_close': prev_close,
-                'change_percent': round(change_pct, 2),
-                'volume': int(df['volume'].iloc[-1]),
-                'market_cap': 0,  # Alpha Vantage free tier doesn't provide this
-                'pe_ratio': 0,  # Alpha Vantage free tier doesn't provide this
-                'dividend_yield': 0,  # Can calculate if needed
-                'beta': 1.0,  # Default
-                'volatility': round(volatility, 2),
-                'high_52w': high_52w,
-                'low_52w': low_52w,
-                'returns_1m': round(returns_1m, 2),
-                'returns_3m': round(returns_3m, 2),
-                'returns_6m': round(returns_6m, 2),
-                'returns_1y': round(returns_1y, 2),
-                'historical': df[['open', 'high', 'low', 'close', 'volume']].tail(252),  # Keep 1 year for charts
-                'sector': 'Unknown',
-                'industry': 'Unknown'
-            }
-            
-            return result_data
-            
+            df = pd.read_csv(csv_path)
+            df['Date'] = pd.to_datetime(df['Date'])
+            df = df.set_index('Date')
+            # Rename columns to lowercase
+            df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
+            return df
         except Exception as e:
-            if attempt < max_retries - 1:
-                continue  # Try next API key
-            st.error(f"Error fetching {ticker} from Alpha Vantage: {str(e)}")
-            return None
-    
-    # If we get here, all attempts failed
-    st.error(f"Failed to fetch {ticker} after {max_retries} attempts")
+            print(f"Error loading {ticker} from CSV: {e}")
     return None
 
+def _download_top_stocks_data():
+    """Download 5+ years of historical data for top 20 stocks using yfinance"""
+    tickers = constants.HK_STOCKS
+    stocks_data = {}
+    
+    try:
+        print(f"Loading data for {len(tickers)} stocks from CSV files...")
+        
+        # Try to load from CSV first, then download if needed
+        for i, ticker in enumerate(tickers):
+            try:
+                print(f"Loading {ticker} ({i+1}/{len(tickers)})...")
+                
+                # Try CSV first
+                df = _load_stock_from_csv(ticker)
+                
+                # If CSV doesn't exist or is empty, download from yfinance
+                if df is None or df.empty:
+                    print(f"  CSV not found, downloading {ticker}...")
+                    ticker_obj = yf.Ticker(ticker)
+                    df = ticker_obj.history(period="6y", interval="1d")
+                
+                if df.empty:
+                    print(f"  No data for {ticker}")
+                    continue
+                
+                # Process the data (columns should already be lowercase from CSV loading)
+                if not all(col.lower() == col for col in df.columns):
+                    # Rename columns to lowercase if not already
+                    df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
+                
+                # Get stock name
+                stock_name = constants.STOCK_NAMES.get(ticker, ticker)
+                
+                # Calculate metrics
+                current_price = df['close'].iloc[-1] if 'close' in df.columns else df.iloc[:, 0].iloc[-1]
+                prev_close = df['close'].iloc[-2] if len(df) > 1 and 'close' in df.columns else current_price
+                change_pct = ((current_price - prev_close) / prev_close * 100) if prev_close > 0 else 0
+                
+                # Calculate historical returns
+                returns_1m = df['close'].pct_change(20).iloc[-1] * 100 if len(df) > 20 and 'close' in df.columns else 0
+                returns_3m = df['close'].pct_change(60).iloc[-1] * 100 if len(df) > 60 and 'close' in df.columns else 0
+                returns_6m = df['close'].pct_change(120).iloc[-1] * 100 if len(df) > 120 and 'close' in df.columns else 0
+                returns_1y = df['close'].pct_change(252).iloc[-1] * 100 if len(df) > 252 and 'close' in df.columns else 0
+                
+                # Volatility (annualized)
+                volatility = df['close'].pct_change().std() * (252 ** 0.5) * 100 if 'close' in df.columns else 0
+                
+                # 52-week high/low
+                high_52w = df['high'].tail(252).max() if len(df) >= 252 and 'high' in df.columns else df['high'].max() if 'high' in df.columns else current_price
+                low_52w = df['low'].tail(252).min() if len(df) >= 252 and 'low' in df.columns else df['low'].min() if 'low' in df.columns else current_price
+                
+                # Handle NaN values safely
+                volume_value = df['volume'].iloc[-1] if 'volume' in df.columns else 0
+                volume_int = int(volume_value) if pd.notna(volume_value) else 0
+                
+                hist_data = df[['open', 'high', 'low', 'close', 'volume']].tail(252) if all(col in df.columns for col in ['open', 'high', 'low', 'close', 'volume']) else df.iloc[:, :5].tail(252)
+                
+                stocks_data[ticker] = {
+                    'ticker': ticker,
+                    'name': stock_name,
+                    'current_price': current_price,
+                    'previous_close': prev_close,
+                    'change_percent': round(change_pct, 2) if pd.notna(change_pct) else 0,
+                    'volume': volume_int,
+                    'market_cap': 0,
+                    'pe_ratio': 0,
+                    'dividend_yield': 0,
+                    'beta': 1.0,
+                    'volatility': round(volatility, 2) if pd.notna(volatility) else 0,
+                    'high_52w': high_52w,
+                    'low_52w': low_52w,
+                    'returns_1m': round(returns_1m, 2) if pd.notna(returns_1m) else 0,
+                    'returns_3m': round(returns_3m, 2) if pd.notna(returns_3m) else 0,
+                    'returns_6m': round(returns_6m, 2) if pd.notna(returns_6m) else 0,
+                    'returns_1y': round(returns_1y, 2) if pd.notna(returns_1y) else 0,
+                    'historical': hist_data,
+                    'sector': 'Unknown',
+                    'industry': 'Unknown',
+                    'last_updated': datetime.now()
+                }
+                print(f"  ✓ {ticker}: ${current_price:.2f}")
+            except Exception as e:
+                print(f"  ✗ Failed to download {ticker}: {str(e)}")
+                continue
+        
+        print(f"\nSuccessfully processed {len(stocks_data)} stocks from yfinance")
+        return stocks_data
+        
+    except Exception as e:
+        print(f"Error downloading stock data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+def _should_refresh_data():
+    """Check if data should be refreshed (after midnight or first load)"""
+    if 'last_refresh_time' not in st.session_state:
+        return True
+    
+    last_refresh = st.session_state.last_refresh_time
+    now = datetime.now()
+    
+    # Refresh if it's been more than 6 hours (market is open)
+    time_diff = now - last_refresh
+    if time_diff.total_seconds() > 6 * 3600:  # 6 hours in seconds
+        return True
+    
+    return False
+
+def _initialize_stock_data():
+    """Initialize stock data on first load"""
+    if 'top_stocks_data' not in st.session_state or _should_refresh_data():
+        # Don't show spinner here - let the caller control it
+        st.session_state.top_stocks_data = _download_top_stocks_data()
+        st.session_state.last_refresh_time = datetime.now()
+
+def _fetch_single_stock_yfinance(ticker: str) -> Optional[Dict]:
+    """Fetch data for a single stock using yfinance"""
+    try:
+        # Use individual ticker download for stocks not in top 20
+        data = yf.download(
+            ticker,
+            start="2018-01-01",
+            end=None,
+            interval='1d',
+            progress=False,
+            threads=True
+        )
+        
+        if data.empty:
+            return None
+        
+        df = data.copy()
+        
+        # Rename columns to lowercase
+        df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
+        
+        # Get stock name
+        stock_name = constants.STOCK_NAMES.get(ticker, ticker)
+        
+        # Calculate metrics
+        current_price = df['close'].iloc[-1] if 'close' in df.columns else df.iloc[:, 0].iloc[-1]
+        prev_close = df['close'].iloc[-2] if len(df) > 1 and 'close' in df.columns else current_price
+        change_pct = ((current_price - prev_close) / prev_close * 100) if prev_close > 0 else 0
+        
+        # Calculate historical returns
+        returns_1m = df['close'].pct_change(20).iloc[-1] * 100 if len(df) > 20 and 'close' in df.columns else 0
+        returns_3m = df['close'].pct_change(60).iloc[-1] * 100 if len(df) > 60 and 'close' in df.columns else 0
+        returns_6m = df['close'].pct_change(120).iloc[-1] * 100 if len(df) > 120 and 'close' in df.columns else 0
+        returns_1y = df['close'].pct_change(252).iloc[-1] * 100 if len(df) > 252 and 'close' in df.columns else 0
+        
+        # Volatility (annualized)
+        volatility = df['close'].pct_change().std() * (252 ** 0.5) * 100 if 'close' in df.columns else 0
+        
+        # 52-week high/low
+        high_52w = df['high'].tail(252).max() if len(df) >= 252 and 'high' in df.columns else df['high'].max() if 'high' in df.columns else current_price
+        low_52w = df['low'].tail(252).min() if len(df) >= 252 and 'low' in df.columns else df['low'].min() if 'low' in df.columns else current_price
+        
+        # Handle NaN values safely
+        volume_value = df['volume'].iloc[-1] if 'volume' in df.columns else 0
+        volume_int = int(volume_value) if pd.notna(volume_value) else 0
+        
+        hist_data = df[['open', 'high', 'low', 'close', 'volume']].tail(252) if all(col in df.columns for col in ['open', 'high', 'low', 'close', 'volume']) else df.iloc[:, :5].tail(252)
+        
+        return {
+            'ticker': ticker,
+            'name': stock_name,
+            'current_price': current_price,
+            'previous_close': prev_close,
+            'change_percent': round(change_pct, 2) if pd.notna(change_pct) else 0,
+            'volume': volume_int,
+            'market_cap': 0,
+            'pe_ratio': 0,
+            'dividend_yield': 0,
+            'beta': 1.0,
+            'volatility': round(volatility, 2) if pd.notna(volatility) else 0,
+            'high_52w': high_52w,
+            'low_52w': low_52w,
+            'returns_1m': round(returns_1m, 2) if pd.notna(returns_1m) else 0,
+            'returns_3m': round(returns_3m, 2) if pd.notna(returns_3m) else 0,
+            'returns_6m': round(returns_6m, 2) if pd.notna(returns_6m) else 0,
+            'returns_1y': round(returns_1y, 2) if pd.notna(returns_1y) else 0,
+            'historical': hist_data,
+            'sector': 'Unknown',
+            'industry': 'Unknown',
+            'last_updated': datetime.now()
+        }
+    except Exception as e:
+        print(f"Error fetching {ticker}: {str(e)}")
+        return None
+
 def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
-    """Get stock data with caching"""
-    # Check session state first (in-memory cache with full data)
-    cache_key = f"stock_{ticker}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
+    """Get stock data for a specific ticker"""
+    _initialize_stock_data()
     
-    # Check database cache for basic metrics only
-    if use_cache:
-        cached_data = db.get_cached_stock_data(ticker)
-        if cached_data:
-            # If we have cached basic data, we still need to fetch fresh data for historical
-            # This ensures we always have historical data for predictions
-            pass
+    # First check if it's in the preloaded top 20 stocks
+    if 'top_stocks_data' in st.session_state and ticker in st.session_state.top_stocks_data:
+        return st.session_state.top_stocks_data[ticker]
     
-    # Fetch from API (always get fresh data to ensure historical data is available)
-    data = _fetch_ticker_alphavantage(ticker)
-    
-    if data:
-        # Cache in session state (with full data including historical)
-        st.session_state[cache_key] = data
-        
-        # Prepare data for database (remove pandas DataFrame)
-        data_for_cache = data.copy()
-        if 'historical' in data_for_cache:
-            # Remove historical DataFrame - can't store in MongoDB
-            del data_for_cache['historical']
-        
-        # Cache basic metrics in database
-        db.cache_stock_data(ticker, data_for_cache)
-    
-    return data
+    # Otherwise fetch it individually
+    return _fetch_single_stock_yfinance(ticker)
 
 def get_multiple_stocks(tickers: List[str], use_cache: bool = True) -> Dict[str, Optional[Dict]]:
-    """Get multiple stocks efficiently with better caching"""
-    results = {}
+    """Get multiple stocks"""
+    _initialize_stock_data()
     
-    # Check session state first for all tickers
-    for ticker in tickers:
-        cache_key = f"stock_{ticker}"
-        if cache_key in st.session_state:
-            results[ticker] = st.session_state[cache_key]
-        else:
-            # Fetch fresh data to ensure historical data is available
-            results[ticker] = get_stock_data(ticker, use_cache=False)
+    results = {}
+    if 'top_stocks_data' in st.session_state:
+        for ticker in tickers:
+            if ticker in st.session_state.top_stocks_data:
+                results[ticker] = st.session_state.top_stocks_data[ticker]
     
     return results
 
 def get_all_stocks() -> Dict[str, Optional[Dict]]:
-    """Get all 20 pre-selected stocks"""
-    return get_multiple_stocks(constants.HK_STOCKS)
+    """Get all top 20 stocks with their data"""
+    _initialize_stock_data()
+    
+    # Wait for data to be loaded
+    max_wait = 10  # Wait up to 10 seconds
+    wait_count = 0
+    while 'top_stocks_data' not in st.session_state and wait_count < max_wait:
+        import time
+        time.sleep(0.1)
+        wait_count += 1
+    
+    if 'top_stocks_data' in st.session_state and len(st.session_state.top_stocks_data) > 0:
+        return st.session_state.top_stocks_data
+    
+    return {}
 
 def show_api_usage_stats():
-    """Display API usage statistics in sidebar"""
-    # Add debug checkbox (only create once)
-    st.sidebar.checkbox("🔧 Debug API Keys", help="Show which API key is being used", key="debug_api_keys_global")
-    
-    if 'api_usage_log' in st.session_state and st.session_state.api_usage_log:
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("🔧 API Usage Stats")
-        
-        for key_short, stats in st.session_state.api_usage_log.items():
-            total = stats['success'] + stats['failed']
-            success_rate = (stats['success'] / total * 100) if total > 0 else 0
-            
-            st.sidebar.write(f"**{key_short}**")
-            st.sidebar.write(f"Success: {stats['success']} | Failed: {stats['failed']}")
-            st.sidebar.write(f"Success Rate: {success_rate:.1f}%")
-            st.sidebar.write(f"Tickers: {', '.join(list(stats['tickers'])[:3])}{'...' if len(stats['tickers']) > 3 else ''}")
-            st.sidebar.write("---")
+    """Display API usage statistics in sidebar (removed for cleaner UI)"""
+    pass

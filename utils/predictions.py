@@ -243,23 +243,23 @@ def holt_winters_prediction(df: pd.DataFrame, days_ahead: int = 30) -> Dict[str,
         }
     except Exception as e:
         # Simple exponential smoothing fallback
-    recent_data = df.tail(min(60, len(df)))['close'].values
+        recent_data = df.tail(min(60, len(df)))['close'].values
         alpha = 0.3
-    
-    smoothed = [recent_data[0]]
-    for i in range(1, len(recent_data)):
-        smoothed.append(alpha * recent_data[i] + (1 - alpha) * smoothed[i-1])
-    
-    trend = (smoothed[-1] - smoothed[-min(10, len(smoothed))]) / min(10, len(smoothed))
+        
+        smoothed = [recent_data[0]]
+        for i in range(1, len(recent_data)):
+            smoothed.append(alpha * recent_data[i] + (1 - alpha) * smoothed[i-1])
+        
+        trend = (smoothed[-1] - smoothed[-min(10, len(smoothed))]) / min(10, len(smoothed))
         prediction = smoothed[-1] + (trend * days_ahead)
-    
-    return {
+        
+        return {
             'prediction': prediction,
             'predictions': [smoothed[-1] + (trend * i) for i in range(1, days_ahead + 1)],
             'confidence': 0.6,
             'model': 'Simple Exponential Smoothing',
-        'trend': trend
-    }
+            'trend': trend
+        }
 
 def lstm_prediction(df: pd.DataFrame, days_ahead: int = 30) -> Dict[str, float]:
     """LSTM Neural Network (used by major banks and hedge funds)"""
@@ -528,24 +528,24 @@ def generate_forecast(stock_data: Dict, days_ahead: int = 30) -> Dict[str, any]:
         return {'error': 'Insufficient data for forecasting (minimum 20 days required)'}
     
     try:
-    # Calculate technical indicators
-    ma_values = calculate_moving_averages(df)
-    rsi = calculate_rsi(df)
-    macd_values = calculate_macd(df)
+        # Calculate technical indicators
+        ma_values = calculate_moving_averages(df)
+        rsi = calculate_rsi(df)
+        macd_values = calculate_macd(df)
         bollinger = calculate_bollinger_bands(df)
         stochastic = calculate_stochastic(df)
-    
+        
         # Get ensemble prediction
         ensemble_result = ensemble_prediction(df, days_ahead)
-    
+        
         if 'error' in ensemble_result:
             return ensemble_result
-    
+        
         # Advanced trend analysis
         trend_info = advanced_trend_analysis(df)
-    
-    # Current metrics
-    current_price = stock_data['current_price']
+        
+        # Current metrics
+        current_price = stock_data['current_price']
         ensemble_final = ensemble_result['prediction']
         
         # Calculate price change
@@ -553,16 +553,16 @@ def generate_forecast(stock_data: Dict, days_ahead: int = 30) -> Dict[str, any]:
         
         # Determine recommendation based on ensemble and trend analysis
         if price_change > 8 and trend_info['signal'] in ['STRONG BUY', 'BUY']:
-        recommendation = 'STRONG BUY'
+            recommendation = 'STRONG BUY'
         elif price_change > 3 and trend_info['signal'] in ['BUY', 'STRONG BUY']:
-        recommendation = 'BUY'
+            recommendation = 'BUY'
         elif price_change < -8 and trend_info['signal'] in ['STRONG SELL', 'SELL']:
-        recommendation = 'STRONG SELL'
+            recommendation = 'STRONG SELL'
         elif price_change < -3 and trend_info['signal'] in ['SELL', 'STRONG SELL']:
-        recommendation = 'SELL'
-    else:
-        recommendation = 'HOLD'
-    
+            recommendation = 'SELL'
+        else:
+            recommendation = 'HOLD'
+        
         # Get individual model results for display
         individual_models = {
             'arima': auto_arima_prediction(df, days_ahead),
@@ -575,18 +575,18 @@ def generate_forecast(stock_data: Dict, days_ahead: int = 30) -> Dict[str, any]:
         # Filter valid models
         valid_models = {k: v for k, v in individual_models.items() 
                        if 'error' not in v and 'Error' not in v.get('model', '')}
-    
-    return {
-        'current_price': current_price,
+        
+        return {
+            'current_price': current_price,
             'strategies': valid_models,
             'ensemble': ensemble_result,
             'average_forecast': ensemble_final,
             'average_change_percent': price_change,
-        'recommendation': recommendation,
-        'trend': trend_info,
-        'rsi': rsi.iloc[-1] if len(rsi) > 0 else 50,
-        'rsi_signal': 'OVERBOUGHT' if rsi.iloc[-1] > 70 else 'OVERSOLD' if rsi.iloc[-1] < 30 else 'NEUTRAL',
-        'macd_signal': 'BULLISH' if macd_values['histogram'].iloc[-1] > 0 else 'BEARISH',
+            'recommendation': recommendation,
+            'trend': trend_info,
+            'rsi': rsi.iloc[-1] if len(rsi) > 0 else 50,
+            'rsi_signal': 'OVERBOUGHT' if rsi.iloc[-1] > 70 else 'OVERSOLD' if rsi.iloc[-1] < 30 else 'NEUTRAL',
+            'macd_signal': 'BULLISH' if macd_values['histogram'].iloc[-1] > 0 else 'BEARISH',
             'bollinger_position': 'UPPER' if current_price > bollinger['upper'].iloc[-1] else 'LOWER' if current_price < bollinger['lower'].iloc[-1] else 'MIDDLE',
             'stochastic_signal': 'OVERBOUGHT' if stochastic['k_percent'].iloc[-1] > 80 else 'OVERSOLD' if stochastic['k_percent'].iloc[-1] < 20 else 'NEUTRAL',
             'days_ahead': days_ahead,

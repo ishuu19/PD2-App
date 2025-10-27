@@ -1,5 +1,6 @@
 """Portfolio Service - Calculate portfolio metrics and P&L"""
 from typing import Dict, List, Optional
+from datetime import datetime
 import pandas as pd
 import database.models as db
 from config import constants
@@ -20,39 +21,74 @@ def calculate_portfolio_value(user_id: str, all_stock_data: Dict) -> Dict:
     holdings_list = []
     
     for ticker, quantity in holdings.items():
-        if quantity > 0 and ticker in all_stock_data and all_stock_data[ticker]:
-            stock_data = all_stock_data[ticker]
-            current_price = stock_data.get('current_price', 0)
-            current_value = quantity * current_price
-            total_stock_value += current_value
+        if quantity > 0:
+            # First try to get from preloaded data
+            stock_data = None
+            current_price = 0
             
-            # Get purchase details
-            holding_detail = holdings_details.get(ticker, {})
-            purchase_price = holding_detail.get('purchase_price', current_price)
-            purchase_date = holding_detail.get('purchase_date', 'Unknown')
+            if ticker in all_stock_data and all_stock_data[ticker]:
+                stock_data = all_stock_data[ticker]
+                current_price = stock_data.get('current_price', 0)
             
-            # Calculate P&L
-            cost_basis = quantity * purchase_price
-            total_cost_basis += cost_basis
+            # If not in preloaded data, check session state
+            if not stock_data or not current_price:
+                import streamlit as st
+                if 'top_stocks_data' in st.session_state and ticker in st.session_state.top_stocks_data:
+                    stock_data = st.session_state.top_stocks_data[ticker]
+                    current_price = stock_data.get('current_price', 0)
             
-            unrealized_pnl = current_value - cost_basis
-            total_unrealized_pnl += unrealized_pnl
+            # If still no data, skip this ticker
+            if not stock_data or not current_price or current_price <= 0:
+                continue
             
-            pnl_percent = (unrealized_pnl / cost_basis * 100) if cost_basis > 0 else 0
-            
-            holdings_list.append({
-                'ticker': ticker,
-                'name': stock_data.get('name', ticker),
-                'quantity': quantity,
-                'current_price': current_price,
-                'purchase_price': purchase_price,
-                'purchase_date': purchase_date,
-                'current_value': current_value,
-                'cost_basis': cost_basis,
-                'unrealized_pnl': unrealized_pnl,
-                'pnl_percent': pnl_percent,
-                'daily_change_percent': stock_data.get('change_percent', 0)
-            })
+            # Only process if we have valid price data
+            if stock_data and current_price and current_price > 0:
+                current_value = quantity * current_price
+                total_stock_value += current_value
+                
+                # Get purchase details
+                holding_detail = holdings_details.get(ticker, {})
+                
+                # If holdings_details is empty, use current price as purchase price
+                if not holding_detail or not holding_detail.get('purchase_price'):
+                    purchase_price = current_price
+                    purchase_date_val = datetime.now()
+                else:
+                    purchase_price = holding_detail.get('purchase_price', current_price)
+                    purchase_date_val = holding_detail.get('purchase_date', datetime.now())
+                
+                # Handle purchase_date formatting
+                if purchase_date_val:
+                    if isinstance(purchase_date_val, str):
+                        purchase_date = purchase_date_val
+                    else:
+                        # It's a datetime object
+                        purchase_date = purchase_date_val.strftime('%Y-%m-%d') if hasattr(purchase_date_val, 'strftime') else str(purchase_date_val)[:10]
+                else:
+                    purchase_date = 'Unknown'
+                
+                # Calculate P&L
+                cost_basis = quantity * purchase_price
+                total_cost_basis += cost_basis
+                
+                unrealized_pnl = current_value - cost_basis
+                total_unrealized_pnl += unrealized_pnl
+                
+                pnl_percent = (unrealized_pnl / cost_basis * 100) if cost_basis > 0 else 0
+                
+                holdings_list.append({
+                    'ticker': ticker,
+                    'name': stock_data.get('name', ticker),
+                    'quantity': quantity,
+                    'current_price': current_price,
+                    'purchase_price': purchase_price,
+                    'purchase_date': purchase_date,
+                    'current_value': current_value,
+                    'cost_basis': cost_basis,
+                    'unrealized_pnl': unrealized_pnl,
+                    'pnl_percent': pnl_percent,
+                    'daily_change_percent': stock_data.get('change_percent', 0)
+                })
     
     total_value = cash + total_stock_value
     total_return_percent = (total_unrealized_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
@@ -155,16 +191,27 @@ def execute_sell(user_id: str, ticker: str, price: float, quantity: float) -> bo
     
     # Update holdings
     holdings = portfolio.get('holdings', {})
+    holdings_details = portfolio.get('holdings_details', {})
     current_quantity = holdings.get(ticker, 0)
     new_quantity = current_quantity - quantity
     
     if new_quantity <= 0:
+        # Completely sold - remove from holdings
         holdings.pop(ticker, None)
+        # Remove from holdings_details too
+        holdings_details.pop(ticker, None)
     else:
+        # Partially sold - update quantities
         holdings[ticker] = new_quantity
+        
+        # Update holdings_details for partial sell
+        # Keep the same purchase price and date for remaining shares
+        if ticker in holdings_details:
+            holdings_details[ticker]['quantity'] = new_quantity
+            holdings_details[ticker]['last_updated'] = datetime.utcnow()
     
     # Save to database
-    db.update_portfolio(user_id, {'cash_balance': new_cash, 'holdings': holdings})
+    db.update_portfolio(user_id, {'cash_balance': new_cash, 'holdings': holdings, 'holdings_details': holdings_details})
     
     # Create transaction record
     db.create_transaction(user_id, ticker, 'sell', quantity, price)

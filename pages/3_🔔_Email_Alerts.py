@@ -13,12 +13,8 @@ st.title("🔔 Intelligent Email Alerts")
 
 user_id = auth.get_user_id()
 
-# Get stocks data
-if 'stocks_data' not in st.session_state or st.session_state.stocks_data is None:
-    with st.spinner("Loading stock data..."):
-        st.session_state.stocks_data = stock_service.get_all_stocks()
-
-all_stocks_data = st.session_state.stocks_data
+# Get stocks data (loaded from yfinance)
+all_stocks_data = stock_service.get_all_stocks()
 
 # Alert Criteria Options
 ALERT_CRITERIA = [

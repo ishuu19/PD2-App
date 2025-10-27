@@ -22,30 +22,34 @@ st.title("📊 Portfolio Dashboard")
 
 user_id = auth.get_user_id()
 
-# Ensure stocks_data is initialized
-if 'stocks_data' not in st.session_state:
-    st.session_state.stocks_data = {}
+# Get all top 20 stocks data (loaded from yfinance)
+# Show spinner while loading stock data
+with st.spinner("Loading stock data..."):
+    all_stocks_data = stock_service.get_all_stocks()
 
-# Auto-refresh portfolio data on page load
-portfolio = db.get_portfolio(user_id)
-if portfolio and portfolio.get('holdings'):
-    # Check if we need to refresh (if no data or data is old)
-    last_refresh = portfolio.get('last_refresh')
-    if not last_refresh or (isinstance(last_refresh, str) and 'T' in last_refresh):
-        # Refresh data
-        try:
-            refresh_result = portfolio_service.refresh_portfolio_data(user_id)
-            if refresh_result:
-                st.session_state.stocks_data = {}
-        except Exception as e:
-            st.warning(f"Could not auto-refresh: {str(e)}")
-
-all_stocks_data = st.session_state.stocks_data
-
-# If no stocks loaded, show message
+# Verify we got stock data
 if not all_stocks_data:
-    st.info("👈 Please search for stocks in the Dashboard page first to view them here.")
+    st.warning("⚠️ Stock data is loading. Please wait a moment and refresh.")
     st.stop()
+
+# Get portfolio
+portfolio = db.get_portfolio(user_id)
+
+# Auto-refresh portfolio data on first load
+if 'portfolio_refreshed' not in st.session_state:
+    st.session_state.portfolio_refreshed = False
+
+if not st.session_state.portfolio_refreshed and portfolio and portfolio.get('holdings'):
+    st.session_state.portfolio_refreshed = True
+    try:
+        # Automatically refresh portfolio with latest prices
+        refresh_result = portfolio_service.refresh_portfolio_data(user_id)
+        if refresh_result:
+            # Reload the page to show updated data
+            st.rerun()
+    except Exception as e:
+        # Silently handle errors - don't block the UI
+        pass
 
 # Portfolio Summary Section
 st.header("Portfolio Summary")
@@ -130,8 +134,8 @@ holdings = portfolio_value.get('holdings', []) if portfolio_value else []
 if holdings:
     holdings_df = pd.DataFrame(holdings)
     
-    # Create a more detailed holdings display
-    display_columns = ['name', 'quantity', 'current_price', 'purchase_price', 'current_value', 'unrealized_pnl', 'pnl_percent', 'daily_change_percent']
+    # Create a more detailed holdings display with P&L tracking
+    display_columns = ['name', 'quantity', 'purchase_price', 'current_price', 'current_value', 'unrealized_pnl', 'pnl_percent', 'purchase_date']
     available_columns = [col for col in display_columns if col in holdings_df.columns]
     
     # Format the dataframe for better display
@@ -148,19 +152,26 @@ if holdings:
         formatted_df['unrealized_pnl'] = formatted_df['unrealized_pnl'].apply(lambda x: f"${x:,.0f}")
     if 'pnl_percent' in formatted_df.columns:
         formatted_df['pnl_percent'] = formatted_df['pnl_percent'].apply(lambda x: f"{x:.2f}%")
-    if 'daily_change_percent' in formatted_df.columns:
-        formatted_df['daily_change_percent'] = formatted_df['daily_change_percent'].apply(lambda x: f"{x:.2f}%")
+    if 'purchase_date' in formatted_df.columns:
+        def format_date(date_val):
+            if date_val == 'Unknown' or pd.isna(date_val):
+                return 'N/A'
+            try:
+                return date_val.strftime('%Y-%m-%d')
+            except:
+                return str(date_val)
+        formatted_df['purchase_date'] = formatted_df['purchase_date'].apply(format_date)
     
     # Rename columns for better display
     column_names = {
         'name': 'Stock Name',
         'quantity': 'Shares',
-        'current_price': 'Current Price',
         'purchase_price': 'Purchase Price',
+        'current_price': 'Current Price',
         'current_value': 'Current Value',
-        'unrealized_pnl': 'P&L ($)',
-        'pnl_percent': 'P&L (%)',
-        'daily_change_percent': 'Daily Change'
+        'unrealized_pnl': 'Gain/Loss ($)',
+        'pnl_percent': 'Gain/Loss (%)',
+        'purchase_date': 'Purchase Date'
     }
     
     formatted_df = formatted_df.rename(columns=column_names)

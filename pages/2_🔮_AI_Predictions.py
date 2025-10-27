@@ -19,11 +19,8 @@ if not auth.is_logged_in():
 
 st.title("🔮 AI Price Predictions & Trading Dashboard")
 
-# Ensure stocks_data is initialized
-if 'stocks_data' not in st.session_state:
-    st.session_state.stocks_data = {}
-
-all_stocks_data = st.session_state.stocks_data
+# Load all top stocks data (loaded from yfinance)
+all_stocks_data = stock_service.get_all_stocks()
 
 # Stock Selection
 st.header("Select Stock for Prediction")
@@ -39,19 +36,12 @@ selected_ticker = st.selectbox(
     help="Choose from the top 20 well-known US stocks"
 )
 
-# Load data for selected ticker if not already loaded
+# Load data for selected ticker
 if selected_ticker:
-    if selected_ticker not in all_stocks_data or not all_stocks_data[selected_ticker]:
-        with st.spinner(f"Loading data for {selected_ticker}..."):
-            stock_data = stock_service.get_stock_data(selected_ticker)
-            if stock_data:
-                st.session_state.stocks_data[selected_ticker] = stock_data
-                all_stocks_data = st.session_state.stocks_data
-            else:
-                st.error(f"Failed to load data for {selected_ticker}. Please try again.")
-                st.stop()
-    else:
-        stock_data = all_stocks_data[selected_ticker]
+    stock_data = stock_service.get_stock_data(selected_ticker)
+    if not stock_data:
+        st.error(f"Failed to load data for {selected_ticker}. Please try again.")
+        st.stop()
     
     # Debug: Check if historical data is available
     if 'historical' not in stock_data or stock_data['historical'] is None:
@@ -69,8 +59,7 @@ else:
     st.info("Please select a stock ticker from the dropdown above.")
     st.stop()
 
-if selected_ticker and selected_ticker in all_stocks_data and all_stocks_data[selected_ticker]:
-    stock_data = all_stocks_data[selected_ticker]
+if selected_ticker and stock_data:
     
     # Display current stock info
     col1, col2, col3, col4 = st.columns(4)

@@ -260,20 +260,27 @@ def update_alert_last_triggered(alert_id: str):
 # ===== CACHE =====
 
 def get_cached_stock_data(ticker: str) -> Optional[Dict]:
-    """Get cached stock data"""
+    """Get cached stock data - check if data is from today"""
     db = conn.get_database()
     if db is None:
         return None
     
     cache_entry = db.stock_cache.find_one({"ticker": ticker})
     
-    if cache_entry and datetime.utcnow() - cache_entry["cached_at"] < timedelta(hours=24):
-        return cache_entry["data"]
+    if cache_entry:
+        cached_at = cache_entry.get("cached_at")
+        if isinstance(cached_at, str):
+            cached_at = datetime.fromisoformat(cached_at.replace('Z', '+00:00'))
+        
+        # Check if data is from today
+        now = datetime.utcnow()
+        if cached_at.date() == now.date():
+            return cache_entry["data"]
     
     return None
 
 def cache_stock_data(ticker: str, data: Dict):
-    """Cache stock data for 24 hours"""
+    """Cache stock data with current date"""
     db = conn.get_database()
     if db is None:
         return
@@ -286,6 +293,28 @@ def cache_stock_data(ticker: str, data: Dict):
         }},
         upsert=True
     )
+
+def get_all_cached_top_stocks():
+    """Get all cached top 20 stocks"""
+    db = conn.get_database()
+    if db is None:
+        return {}
+    
+    cache_entries = db.stock_cache.find({})
+    result = {}
+    now = datetime.utcnow()
+    
+    for entry in cache_entries:
+        ticker = entry.get("ticker")
+        cached_at = entry.get("cached_at")
+        if isinstance(cached_at, str):
+            cached_at = datetime.fromisoformat(cached_at.replace('Z', '+00:00'))
+        
+        # Only return data from today
+        if cached_at.date() == now.date():
+            result[ticker] = entry.get("data")
+    
+    return result
 
 def get_cached_ai_response(query_hash: str) -> Optional[str]:
     """Get cached AI response"""

@@ -1,5 +1,6 @@
 """Main Portfolio Management Application"""
 import streamlit as st
+import time
 import utils.auth as auth
 import database.models as db
 import services.stock_data as stock_service
@@ -14,21 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = None
-if 'username' not in st.session_state:
-    st.session_state.username = None
-if 'email' not in st.session_state:
-    st.session_state.email = None
-if 'access_token' not in st.session_state:
-    st.session_state.access_token = None
-if 'refresh_token' not in st.session_state:
-    st.session_state.refresh_token = None
-if 'stocks_data' not in st.session_state:
-    st.session_state.stocks_data = {}
-if 'persistent_user_id' not in st.session_state:
-    st.session_state.persistent_user_id = None
+# Session state is managed by individual pages and services
 
 # Debug authentication (only show in development)
 if st.sidebar.checkbox("🔧 Debug Authentication", help="Show authentication debug information"):
@@ -55,6 +42,7 @@ def main():
         show_login_register()
     else:
         # Show dashboard for logged in users
+        # Top stocks data is loaded automatically when accessed
         show_main_app()
         # Render chatbot on all pages when logged in
         chatbot.render_chatbot()
@@ -85,7 +73,11 @@ def show_login_register():
                     if user_id:
                         user = db.get_user(user_id)
                         auth.login_user(user_id, username, user.get('email', ''))
+                        # Store user_id in session state for persistence
+                        st.session_state.persistent_user_id = user_id
                         st.success("Login successful! Redirecting to Dashboard...")
+                        # Give time for state to be saved
+                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error("Invalid username or password")
@@ -116,6 +108,16 @@ def show_login_register():
 
 def show_main_app():
     """Show main application - Dashboard"""
+    # Check if we need to load stock data
+    if 'stocks_loaded' not in st.session_state:
+        with st.spinner("🔄 Loading market data... This may take a moment..."):
+            st.session_state.stocks_loaded = False
+            # Load stock data in background
+            all_stocks_data = stock_service.get_all_stocks()
+            if all_stocks_data and len(all_stocks_data) > 0:
+                st.session_state.stocks_loaded = True
+                st.success(f"✅ Loaded {len(all_stocks_data)} stocks successfully!")
+    
     # Sidebar
     with st.sidebar:
         st.title(f"Welcome, {auth.get_username()}!")
@@ -128,12 +130,13 @@ def show_main_app():
         if portfolio:
             st.metric("Cash Balance", f"${portfolio.get('cash_balance', 0):,.0f} USD")
             
-            # Calculate portfolio value if stocks data is loaded
-            if st.session_state.stocks_data:
+            # Calculate portfolio value with current stock data
+            if st.session_state.get('stocks_loaded', False):
                 from services import portfolio_service
+                all_stocks_data = stock_service.get_all_stocks()
                 portfolio_value = portfolio_service.calculate_portfolio_value(
                     auth.get_user_id(), 
-                    st.session_state.stocks_data
+                    all_stocks_data
                 )
                 if portfolio_value:
                     st.metric("Total Value", f"${portfolio_value.get('total_value', 0):,.0f} USD")
@@ -153,6 +156,11 @@ def show_main_app():
     # Stock Search Section
     st.markdown("---")
     st.header("🔍 Search Stock")
+    
+    # Wait for stocks to be loaded
+    if not st.session_state.get('stocks_loaded', False):
+        st.info("⏳ Loading market data... Please wait.")
+        st.stop()
     
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -198,27 +206,21 @@ def show_main_app():
                     st.metric("P/E Ratio", f"{stock_data['pe_ratio']:.2f}")
                     st.metric("Dividend Yield", f"{stock_data['dividend_yield']:.2f}%")
             
-            # Add or update stock data
-            st.session_state.stocks_data[ticker] = stock_data
-            
-            st.success(f"✓ Stock {ticker} has been added to your analysis. Go to Portfolio Dashboard to buy/sell stocks.")
+            st.success(f"✓ Stock {ticker} data loaded. Go to Portfolio Dashboard to buy/sell stocks.")
         else:
             st.error(f"Could not fetch data for {ticker}. Please check the ticker symbol and try again.")
     
     st.markdown("---")
     
-    # Display currently loaded stocks
-    if not st.session_state.stocks_data:
-        st.info("👈 Search for a stock ticker above to get started.")
-    else:
-        num_stocks_loaded = sum(1 for v in st.session_state.stocks_data.values() if v is not None)
-        if num_stocks_loaded > 0:
-            st.success(f"📊 {num_stocks_loaded} stock(s) loaded. Visit Portfolio Dashboard to view details.")
-            # Show list of loaded stocks
-            with st.expander("View Loaded Stocks"):
-                for ticker, data in st.session_state.stocks_data.items():
-                    if data:
-                        st.text(f"• {ticker} - {data.get('name', 'N/A')}")
+    # Show top stocks available
+    all_stocks_data = stock_service.get_all_stocks()
+    if all_stocks_data:
+        tickers_list = [ticker for ticker, data in all_stocks_data.items() if data]
+        st.success(f"📊 Top 20 stocks data loaded. You can search for any ticker or view them in Portfolio Dashboard.")
+        
+        with st.expander("View Top Stocks"):
+            for ticker in tickers_list[:10]:  # Show first 10
+                st.text(f"• {ticker}")
     
     # Main content will be handled by Streamlit pages
     st.markdown("""

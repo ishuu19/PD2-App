@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import os
 import database.models as db
 import json
+import pickle
 
 # Secret key for JWT signing
 SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'default_secret_key_change_in_production')
@@ -56,27 +57,53 @@ def _save_persistent_auth(user_data):
         pass
 
 def _get_persistent_user_id():
-    """Get persistent user ID from various sources"""
+    """Get persistent user ID from session state, file, or URL parameters"""
     # First check if we already have user data in session state
     if st.session_state.get('user_id'):
         return st.session_state.user_id
     
-    # Check URL parameters for user_id
-    query_params = st.query_params
-    if 'user_id' in query_params:
-        return query_params['user_id']
-    
     # Check if we have a stored user_id in session state
-    if 'persistent_user_id' in st.session_state:
+    if 'persistent_user_id' in st.session_state and st.session_state.persistent_user_id:
         return st.session_state.persistent_user_id
+    
+    # Check file-based storage (survives page refresh)
+    user_file = '.streamlit/.user_id'
+    if os.path.exists(user_file):
+        try:
+            with open(user_file, 'r') as f:
+                user_id = f.read().strip()
+                if user_id:
+                    st.session_state.persistent_user_id = user_id
+                    return user_id
+        except:
+            pass
+    
+    # Check URL parameters as fallback (for redirect after login)
+    if 'user_id' in st.query_params and st.query_params.user_id:
+        user_id = st.query_params.user_id
+        st.session_state.persistent_user_id = user_id
+        # Save to file for persistence
+        try:
+            os.makedirs('.streamlit', exist_ok=True)
+            with open(user_file, 'w') as f:
+                f.write(user_id)
+        except:
+            pass
+        return user_id
     
     return None
 
 def _set_persistent_user_id(user_id):
-    """Set persistent user ID"""
+    """Set persistent user ID in session state and file"""
     st.session_state.persistent_user_id = user_id
-    # Set in URL parameters for persistence across refreshes
-    st.query_params.user_id = user_id
+    
+    # Save to file for persistence across refreshes
+    try:
+        os.makedirs('.streamlit', exist_ok=True)
+        with open('.streamlit/.user_id', 'w') as f:
+            f.write(user_id)
+    except:
+        pass
 
 def is_logged_in():
     """Check if user is logged in with persistent authentication across page refreshes"""
@@ -88,63 +115,70 @@ def is_logged_in():
         st.session_state.email = None
         st.session_state.access_token = None
         st.session_state.refresh_token = None
-    
-    # Get persistent user ID
-    persistent_user_id = _get_persistent_user_id()
-    
-    # If we have a persistent user ID, try to restore session
-    if persistent_user_id:
-        # Try to restore session from database
-        token_data = db.get_tokens(persistent_user_id)
         
-        if token_data:
-            access_token = token_data.get('access_token')
-            refresh_token = token_data.get('refresh_token')
+        # On first initialization, try to restore from URL or database
+        # Check URL parameters first
+        if 'user_id' in st.query_params and st.query_params.user_id:
+            user_id = st.query_params.user_id
+            st.session_state.persistent_user_id = user_id
             
-            # Try access token first
-            if access_token:
-                payload = _decode_token(access_token)
-                if payload:
-                    # Valid access token, restore session
-                    st.session_state.user_id = payload['user_id']
-                    st.session_state.username = payload['username']
-                    st.session_state.email = payload['email']
-                    st.session_state.access_token = access_token
-                    st.session_state.refresh_token = refresh_token
-                    return True
-            
-            # Try refresh token
-            if refresh_token:
-                payload = _decode_token(refresh_token)
-                if payload:
-                    # Valid refresh token, generate new access token and restore session
-                    user_id = payload['user_id']
-                    username = payload['username']
-                    email = payload['email']
-                    
-                    new_access_token = _generate_token(user_id, username, email, ACCESS_TOKEN_EXPIRY)
-                    
-                    # Update session state and database
-                    st.session_state.user_id = user_id
-                    st.session_state.username = username
-                    st.session_state.email = email
-                    st.session_state.access_token = new_access_token
-                    st.session_state.refresh_token = refresh_token
-                    db.save_tokens(user_id, new_access_token, refresh_token)
-                    
-                    return True
+            # Try to restore session from database
+            token_data = db.get_tokens(user_id)
+            if token_data:
+                stored_access_token = token_data.get('access_token')
+                stored_refresh_token = token_data.get('refresh_token')
+                
+                # Try stored access token first
+                if stored_access_token:
+                    payload = _decode_token(stored_access_token)
+                    if payload:
+                        # Restore session immediately
+                        st.session_state.user_id = payload['user_id']
+                        st.session_state.username = payload['username']
+                        st.session_state.email = payload['email']
+                        st.session_state.access_token = stored_access_token
+                        st.session_state.refresh_token = stored_refresh_token
+                        return True
+                
+                # Try stored refresh token
+                if stored_refresh_token:
+                    payload = _decode_token(stored_refresh_token)
+                    if payload:
+                        # Generate new access token and restore session
+                        user_id_from_token = payload['user_id']
+                        username = payload['username']
+                        email = payload['email']
+                        
+                        new_access_token = _generate_token(user_id_from_token, username, email, ACCESS_TOKEN_EXPIRY)
+                        
+                        st.session_state.user_id = user_id_from_token
+                        st.session_state.username = username
+                        st.session_state.email = email
+                        st.session_state.access_token = new_access_token
+                        st.session_state.refresh_token = stored_refresh_token
+                        
+                        db.save_tokens(user_id_from_token, new_access_token, stored_refresh_token)
+                        return True
     
-    # If we have valid tokens in session state, use them
-    if st.session_state.access_token:
-        payload = _decode_token(st.session_state.access_token)
+    # First check if we already have valid tokens in session state
+    access_token = st.session_state.get('access_token')
+    if access_token:
+        payload = _decode_token(access_token)
         if payload:
+            # Valid access token in session state
+            if 'user_id' not in st.session_state or st.session_state.user_id is None:
+                # Restore user info from token
+                st.session_state.user_id = payload['user_id']
+                st.session_state.username = payload['username']
+                st.session_state.email = payload['email']
             return True
     
-    # Try refresh token from session state
-    if st.session_state.refresh_token:
-        payload = _decode_token(st.session_state.refresh_token)
+    # Check refresh token in session state
+    refresh_token = st.session_state.get('refresh_token')
+    if refresh_token:
+        payload = _decode_token(refresh_token)
         if payload:
-            # Refresh token is valid, generate new access token
+            # Valid refresh token, generate new access token
             user_id = payload['user_id']
             username = payload['username']
             email = payload['email']
@@ -156,11 +190,59 @@ def is_logged_in():
             st.session_state.username = username
             st.session_state.email = email
             st.session_state.access_token = new_access_token
+            st.session_state.refresh_token = refresh_token
             
             # Save to database
-            db.save_tokens(user_id, new_access_token, st.session_state.refresh_token)
+            db.save_tokens(user_id, new_access_token, refresh_token)
+            _set_persistent_user_id(user_id)
             
             return True
+    
+    # Get persistent user ID from URL or session
+    persistent_user_id = _get_persistent_user_id()
+    
+    # Try to restore using persistent user ID if we have one
+    if persistent_user_id:
+        token_data = db.get_tokens(persistent_user_id)
+        
+        if token_data:
+            stored_access_token = token_data.get('access_token')
+            stored_refresh_token = token_data.get('refresh_token')
+            
+            # Try stored access token first
+            if stored_access_token:
+                payload = _decode_token(stored_access_token)
+                if payload:
+                    # Valid access token from database, restore session
+                    st.session_state.user_id = payload['user_id']
+                    st.session_state.username = payload['username']
+                    st.session_state.email = payload['email']
+                    st.session_state.access_token = stored_access_token
+                    st.session_state.refresh_token = stored_refresh_token
+                    return True
+            
+            # Try stored refresh token
+            if stored_refresh_token:
+                payload = _decode_token(stored_refresh_token)
+                if payload:
+                    # Valid refresh token from database, generate new access token
+                    user_id = payload['user_id']
+                    username = payload['username']
+                    email = payload['email']
+                    
+                    new_access_token = _generate_token(user_id, username, email, ACCESS_TOKEN_EXPIRY)
+                    
+                    # Update session state and database
+                    st.session_state.user_id = user_id
+                    st.session_state.username = username
+                    st.session_state.email = email
+                    st.session_state.access_token = new_access_token
+                    st.session_state.refresh_token = stored_refresh_token
+                    db.save_tokens(user_id, new_access_token, stored_refresh_token)
+                    _set_persistent_user_id(user_id)
+                    st.query_params['user_id'] = user_id
+                    
+                    return True
     
     # No valid authentication found
     return False
@@ -174,9 +256,12 @@ def _clear_session_state():
 
 def login_user(user_id: str, username: str, email: str):
     """Set user session with access and refresh tokens"""
-    # Generate tokens
+    # Generate tokens (1 hour access token, 7 days refresh token)
     access_token = _generate_token(user_id, username, email, ACCESS_TOKEN_EXPIRY)
     refresh_token = _generate_token(user_id, username, email, REFRESH_TOKEN_EXPIRY)
+    
+    # Set persistent user ID FIRST - needed for is_logged_in to work
+    _set_persistent_user_id(user_id)
     
     # Store in session state
     st.session_state.user_id = user_id
@@ -185,10 +270,7 @@ def login_user(user_id: str, username: str, email: str):
     st.session_state.access_token = access_token
     st.session_state.refresh_token = refresh_token
     
-    # Set persistent user ID for cross-page persistence
-    _set_persistent_user_id(user_id)
-    
-    # Save to database for cloud support
+    # Save to database for persistence across refreshes
     db.save_tokens(user_id, access_token, refresh_token)
 
 def logout_user():
@@ -199,7 +281,15 @@ def logout_user():
     if user_id:
         db.delete_tokens(user_id)
     
-    # Clear persistent user ID
+    # Clear persistent user ID file
+    user_file = '.streamlit/.user_id'
+    if os.path.exists(user_file):
+        try:
+            os.remove(user_file)
+        except:
+            pass
+    
+    # Clear persistent user ID from session
     if 'persistent_user_id' in st.session_state:
         del st.session_state['persistent_user_id']
     
