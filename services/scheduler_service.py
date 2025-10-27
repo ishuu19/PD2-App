@@ -1,5 +1,4 @@
 """Automated Scheduler Service for Daily Stock Data Refresh and Alert Checking"""
-import schedule
 import time
 import threading
 from datetime import datetime
@@ -8,6 +7,14 @@ import database.models as db
 import services.stock_data as stock_service
 import services.alert_service as alert_service
 from typing import Dict, List
+
+# Try to import schedule, fallback to alternative if not available
+try:
+    import schedule
+    SCHEDULE_AVAILABLE = True
+except ImportError:
+    SCHEDULE_AVAILABLE = False
+    print("⚠️ Schedule module not available. Scheduler will use alternative timing method.")
 
 class SchedulerService:
     def __init__(self):
@@ -21,25 +28,41 @@ class SchedulerService:
             
         self.running = True
         
-        # Schedule daily stock data refresh and alert checking at 12:00 AM
-        schedule.every().day.at("00:00").do(self._daily_automated_tasks)
-        
-        # Start scheduler in a separate thread
-        self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
-        self.scheduler_thread.start()
-        
-        print("🕐 Automated scheduler started - Daily tasks scheduled for 12:00 AM")
+        if SCHEDULE_AVAILABLE:
+            # Use schedule library for precise timing
+            schedule.every().day.at("00:00").do(self._daily_automated_tasks)
+            self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
+            self.scheduler_thread.start()
+            print("🕐 Automated scheduler started - Daily tasks scheduled for 12:00 AM")
+        else:
+            # Use alternative timing method
+            self.scheduler_thread = threading.Thread(target=self._run_scheduler_alternative, daemon=True)
+            self.scheduler_thread.start()
+            print("🕐 Automated scheduler started (alternative mode) - Daily tasks will run every 24 hours")
     
     def stop_scheduler(self):
         """Stop the automated scheduler"""
         self.running = False
-        schedule.clear()
+        if SCHEDULE_AVAILABLE:
+            schedule.clear()
         print("🛑 Automated scheduler stopped")
     
     def _run_scheduler(self):
-        """Run the scheduler loop"""
+        """Run the scheduler loop (with schedule library)"""
         while self.running:
             schedule.run_pending()
+            time.sleep(60)  # Check every minute
+    
+    def _run_scheduler_alternative(self):
+        """Run the scheduler loop (alternative method without schedule library)"""
+        last_run = None
+        while self.running:
+            now = datetime.now()
+            # Run daily at midnight (00:00)
+            if now.hour == 0 and now.minute == 0:
+                if last_run is None or (now - last_run).days >= 1:
+                    self._daily_automated_tasks()
+                    last_run = now
             time.sleep(60)  # Check every minute
     
     def _daily_automated_tasks(self):
@@ -157,11 +180,23 @@ class SchedulerService:
     
     def get_scheduler_status(self) -> Dict:
         """Get current scheduler status"""
-        return {
+        status = {
             'running': self.running,
-            'next_run': schedule.next_run() if schedule.jobs else None,
-            'jobs_count': len(schedule.jobs)
+            'schedule_available': SCHEDULE_AVAILABLE
         }
+        
+        if SCHEDULE_AVAILABLE:
+            status.update({
+                'next_run': schedule.next_run() if schedule.jobs else None,
+                'jobs_count': len(schedule.jobs)
+            })
+        else:
+            status.update({
+                'next_run': 'Alternative timing method (daily at midnight)',
+                'jobs_count': 1 if self.running else 0
+            })
+        
+        return status
     
     def run_manual_check(self):
         """Manually run the alert checking process (for testing)"""
