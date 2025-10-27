@@ -38,15 +38,24 @@ def authenticate_user(username: str, password: str) -> Optional[str]:
     """Authenticate user and return user_id"""
     db = conn.get_database()
     if db is None:
+        print("❌ Database connection failed - cannot authenticate user")
         return None
     
-    user = db.users.find_one({"username": username})
-    if not user:
+    try:
+        user = db.users.find_one({"username": username})
+        if not user:
+            print(f"❌ User '{username}' not found in database")
+            return None
+        
+        if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
+            print(f"✅ User '{username}' authenticated successfully")
+            return str(user["_id"])
+        else:
+            print(f"❌ Invalid password for user '{username}'")
+            return None
+    except Exception as e:
+        print(f"❌ Error during authentication: {str(e)}")
         return None
-    
-    if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
-        return str(user["_id"])
-    return None
 
 def get_user(user_id: str) -> Optional[Dict]:
     """Get user by ID"""
