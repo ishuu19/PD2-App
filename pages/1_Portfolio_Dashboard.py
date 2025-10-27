@@ -1,6 +1,7 @@
 """Portfolio Dashboard - Main trading interface"""
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 import utils.auth as auth
 import database.models as db
 import services.stock_data as stock_service
@@ -8,6 +9,9 @@ import services.portfolio_service as portfolio_service
 import services.ai_service as ai_service
 import utils.charts as charts
 from config import constants
+
+# Show API usage stats
+stock_service.show_api_usage_stats()
 
 # Check authentication
 if not auth.is_logged_in():
@@ -18,18 +22,62 @@ st.title("📊 Portfolio Dashboard")
 
 user_id = auth.get_user_id()
 
-# Ensure stocks data is loaded
-if 'stocks_data' not in st.session_state or st.session_state.stocks_data is None:
-    with st.spinner("Loading stock data..."):
-        st.session_state.stocks_data = stock_service.get_all_stocks()
+# Ensure stocks_data is initialized
+if 'stocks_data' not in st.session_state:
+    st.session_state.stocks_data = {}
+
+# Auto-refresh portfolio data on page load
+portfolio = db.get_portfolio(user_id)
+if portfolio and portfolio.get('holdings'):
+    # Check if we need to refresh (if no data or data is old)
+    last_refresh = portfolio.get('last_refresh')
+    if not last_refresh or (isinstance(last_refresh, str) and 'T' in last_refresh):
+        # Refresh data
+        try:
+            refresh_result = portfolio_service.refresh_portfolio_data(user_id)
+            if refresh_result:
+                st.session_state.stocks_data = {}
+        except Exception as e:
+            st.warning(f"Could not auto-refresh: {str(e)}")
 
 all_stocks_data = st.session_state.stocks_data
 
+# If no stocks loaded, show message
+if not all_stocks_data:
+    st.info("👈 Please search for stocks in the Dashboard page first to view them here.")
+    st.stop()
+
 # Portfolio Summary Section
 st.header("Portfolio Summary")
+
+# Add refresh button
+col_refresh, col_info = st.columns([1, 3])
+with col_refresh:
+    if st.button("🔄 Refresh All Data", help="Get latest stock prices and update portfolio"):
+        with st.spinner("Refreshing stock data..."):
+            try:
+                refresh_result = portfolio_service.refresh_portfolio_data(user_id)
+                if refresh_result:
+                    st.success(f"✅ Refreshed {refresh_result['stocks_refreshed']} stocks")
+                    # Update session state with fresh data
+                    st.session_state.stocks_data = {}
+                    st.rerun()
+                else:
+                    st.error("Failed to refresh data")
+            except Exception as e:
+                st.error(f"Error refreshing data: {str(e)}")
+
+with col_info:
+    portfolio = db.get_portfolio(user_id)
+    if portfolio and 'last_refresh' in portfolio:
+        last_refresh = portfolio['last_refresh']
+        if isinstance(last_refresh, str):
+            st.caption(f"Last updated: {last_refresh}")
+        else:
+            st.caption(f"Last updated: {last_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
+
 col1, col2, col3, col4 = st.columns(4)
 
-portfolio = db.get_portfolio(user_id)
 portfolio_value = portfolio_service.calculate_portfolio_value(user_id, all_stocks_data)
 
 if portfolio_value:
@@ -38,10 +86,42 @@ if portfolio_value:
     with col2:
         st.metric("Stock Value", f"{portfolio_value.get('total_stock_value', 0):,.0f} USD")
     with col3:
-        st.metric("Total Value", f"{portfolio_value.get('total_value', 0):,.0f} USD")
+        total_pnl = portfolio_value.get('total_unrealized_pnl', 0)
+        pnl_percent = portfolio_value.get('total_return_percent', 0)
+        st.metric(
+            "Total P&L", 
+            f"{total_pnl:,.0f} USD",
+            delta=f"{pnl_percent:.2f}%"
+        )
     with col4:
-        total_return = portfolio_service.calculate_portfolio_return(user_id)
+        total_value = portfolio_value.get('total_value', 0)
+        initial_cash = constants.INITIAL_CASH
+        total_return = ((total_value - initial_cash) / initial_cash * 100) if initial_cash > 0 else 0
         st.metric("Total Return", f"{total_return:.2f}%", delta=f"{total_return:.2f}%")
+
+# Additional Performance Metrics
+if portfolio_value and portfolio_value.get('holdings'):
+    st.markdown("---")
+    st.subheader("📈 Performance Summary")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        cost_basis = portfolio_value.get('total_cost_basis', 0)
+        st.metric("Total Invested", f"${cost_basis:,.0f}")
+    
+    with col2:
+        current_value = portfolio_value.get('total_stock_value', 0)
+        st.metric("Current Value", f"${current_value:,.0f}")
+    
+    with col3:
+        unrealized_pnl = portfolio_value.get('total_unrealized_pnl', 0)
+        pnl_color = "normal" if unrealized_pnl >= 0 else "inverse"
+        st.metric("Unrealized P&L", f"${unrealized_pnl:,.0f}", delta=f"{portfolio_value.get('total_return_percent', 0):.2f}%")
+    
+    with col4:
+        num_holdings = len(portfolio_value.get('holdings', []))
+        st.metric("Number of Holdings", f"{num_holdings}")
 
 # Portfolio Holdings Section
 st.header("Your Holdings")
@@ -49,14 +129,74 @@ holdings = portfolio_value.get('holdings', []) if portfolio_value else []
 
 if holdings:
     holdings_df = pd.DataFrame(holdings)
-    st.dataframe(holdings_df[['name', 'quantity', 'current_price', 'value', 'change_percent']], 
-                 use_container_width=True)
     
-    # Portfolio Allocation Chart
+    # Create a more detailed holdings display
+    display_columns = ['name', 'quantity', 'current_price', 'purchase_price', 'current_value', 'unrealized_pnl', 'pnl_percent', 'daily_change_percent']
+    available_columns = [col for col in display_columns if col in holdings_df.columns]
+    
+    # Format the dataframe for better display
+    formatted_df = holdings_df[available_columns].copy()
+    
+    # Format numeric columns
+    if 'current_price' in formatted_df.columns:
+        formatted_df['current_price'] = formatted_df['current_price'].apply(lambda x: f"${x:.2f}")
+    if 'purchase_price' in formatted_df.columns:
+        formatted_df['purchase_price'] = formatted_df['purchase_price'].apply(lambda x: f"${x:.2f}")
+    if 'current_value' in formatted_df.columns:
+        formatted_df['current_value'] = formatted_df['current_value'].apply(lambda x: f"${x:,.0f}")
+    if 'unrealized_pnl' in formatted_df.columns:
+        formatted_df['unrealized_pnl'] = formatted_df['unrealized_pnl'].apply(lambda x: f"${x:,.0f}")
+    if 'pnl_percent' in formatted_df.columns:
+        formatted_df['pnl_percent'] = formatted_df['pnl_percent'].apply(lambda x: f"{x:.2f}%")
+    if 'daily_change_percent' in formatted_df.columns:
+        formatted_df['daily_change_percent'] = formatted_df['daily_change_percent'].apply(lambda x: f"{x:.2f}%")
+    
+    # Rename columns for better display
+    column_names = {
+        'name': 'Stock Name',
+        'quantity': 'Shares',
+        'current_price': 'Current Price',
+        'purchase_price': 'Purchase Price',
+        'current_value': 'Current Value',
+        'unrealized_pnl': 'P&L ($)',
+        'pnl_percent': 'P&L (%)',
+        'daily_change_percent': 'Daily Change'
+    }
+    
+    formatted_df = formatted_df.rename(columns=column_names)
+    st.dataframe(formatted_df, use_container_width=True)
+    
+    # Portfolio Charts
     col1, col2 = st.columns(2)
     with col1:
         fig = charts.plot_portfolio_allocation(holdings)
         st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # P&L Chart
+        if 'unrealized_pnl' in holdings_df.columns and 'name' in holdings_df.columns:
+            fig_pnl = go.Figure()
+            
+            # Color bars based on P&L (green for positive, red for negative)
+            colors = ['green' if pnl >= 0 else 'red' for pnl in holdings_df['unrealized_pnl']]
+            
+            fig_pnl.add_trace(go.Bar(
+                x=holdings_df['name'],
+                y=holdings_df['unrealized_pnl'],
+                marker_color=colors,
+                text=[f"${pnl:,.0f}" for pnl in holdings_df['unrealized_pnl']],
+                textposition='auto'
+            ))
+            
+            fig_pnl.update_layout(
+                title="Portfolio P&L by Stock",
+                xaxis_title="Stock",
+                yaxis_title="Unrealized P&L ($)",
+                template="plotly_dark",
+                height=400
+            )
+            
+            st.plotly_chart(fig_pnl, use_container_width=True)
 else:
     st.info("You don't have any holdings yet. Buy some stocks below!")
 

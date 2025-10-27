@@ -23,24 +23,27 @@ all_stocks_data = st.session_state.stocks_data
 # AI Market Commentary
 st.header("🤖 AI Market Commentary")
 if st.button("Get Today's Market Analysis", type="primary"):
-    with st.spinner("Analyzing market conditions..."):
-        # Create market summary
-        portfolio = db.get_portfolio(auth.get_user_id())
-        portfolio_value = portfolio.get('total_value', 0) if portfolio else 0
-        
-        market_summary = f"""
-        Market Analysis for HK Stocks:
-        Total stocks analyzed: {len([s for s in all_stocks_data.values() if s])}
-        Average volatility: {sum([s.get('volatility', 0) for s in all_stocks_data.values() if s]) / len(all_stocks_data)}
-        Portfolio value: {portfolio_value:,.0f} HKD
-        """
-        
-        commentary = ai_service.get_ai_response(
-            f"Provide a comprehensive market commentary for Hong Kong stocks today. Context: {market_summary}",
-            "You are a professional market analyst providing daily market insights."
-        )
-        
-        st.markdown(commentary)
+    with st.spinner("🤖 Analyzing market conditions... This may take a moment."):
+        try:
+            # Create market summary
+            portfolio = db.get_portfolio(auth.get_user_id())
+            portfolio_value = portfolio.get('total_value', 0) if portfolio else 0
+            
+            market_summary = f"""
+            Market Analysis for HK Stocks:
+            Total stocks analyzed: {len([s for s in all_stocks_data.values() if s])}
+            Average volatility: {sum([s.get('volatility', 0) for s in all_stocks_data.values() if s]) / len(all_stocks_data)}
+            Portfolio value: {portfolio_value:,.0f} HKD
+            """
+            
+            commentary = ai_service.get_ai_response(
+                f"Provide a comprehensive market commentary for Hong Kong stocks today. Context: {market_summary}",
+                "You are a professional market analyst providing daily market insights."
+            )
+            
+            st.markdown(commentary)
+        except Exception as e:
+            st.error(f"Error generating market analysis: {str(e)}")
 
 # Market Overview Metrics
 st.header("Market Overview")
@@ -106,22 +109,25 @@ with risk_col3:
 # Sentiment Analysis
 st.header("📰 News Sentiment Analysis")
 if st.button("Analyze News Sentiment", type="primary"):
-    # Simulate sentiment analysis
-    sentiment_data = []
-    for ticker, stock_data in list(all_stocks_data.items())[:5]:  # Analyze first 5 stocks
-        if stock_data:
-            with st.spinner(f"Analyzing {stock_data['name']}..."):
-                sentiment = ai_service.get_ai_response(
-                    f"Analyze news sentiment for {stock_data['name']} based on recent performance: {stock_data.get('returns_1m', 0)}% change.",
-                    "You are a financial news analyst. Provide sentiment (positive/negative/neutral) with a brief explanation."
-                )
-                sentiment_data.append({
-                    'Stock': stock_data['name'],
-                    'Sentiment': sentiment[:50] + "..."
-                })
-    
-    sentiment_df = pd.DataFrame(sentiment_data)
-    st.dataframe(sentiment_df, use_container_width=True)
+    with st.spinner("📰 Analyzing news sentiment... This may take a moment."):
+        try:
+            # Simulate sentiment analysis
+            sentiment_data = []
+            for ticker, stock_data in list(all_stocks_data.items())[:5]:  # Analyze first 5 stocks
+                if stock_data:
+                    sentiment = ai_service.get_ai_response(
+                        f"Analyze news sentiment for {stock_data['name']} based on recent performance: {stock_data.get('returns_1m', 0)}% change.",
+                        "You are a financial news analyst. Provide sentiment (positive/negative/neutral) with a brief explanation."
+                    )
+                    sentiment_data.append({
+                        'Stock': stock_data['name'],
+                        'Sentiment': sentiment[:50] + "..."
+                    })
+            
+            sentiment_df = pd.DataFrame(sentiment_data)
+            st.dataframe(sentiment_df, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error analyzing news sentiment: {str(e)}")
 
 # Market Charts
 st.header("Market Charts")

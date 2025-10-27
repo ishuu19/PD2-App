@@ -1,0 +1,21 @@
+# Streamlit Pages Configuration
+
+[[pages]]
+path = "app.py"
+name = "Login"
+
+[[pages]]
+path = "pages/1_Portfolio_Dashboard.py"
+name = "Portfolio Dashboard"
+
+[[pages]]
+path = "pages/2_🔮_AI_Predictions.py"
+name = "AI Predictions"
+
+[[pages]]
+path = "pages/3_🔔_Email_Alerts.py"
+name = "Email Alerts"
+
+[[pages]]
+path = "pages/4_📈_Market_Intelligence.py"
+name = "Market Intelligence"

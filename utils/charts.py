@@ -11,18 +11,19 @@ def plot_price_chart(stock_data: Dict) -> go.Figure:
     
     hist = stock_data['historical']
     
+    # Alpha Vantage uses lowercase column names
     fig = go.Figure(data=[go.Candlestick(
         x=hist.index,
-        open=hist['Open'],
-        high=hist['High'],
-        low=hist['Low'],
-        close=hist['Close']
+        open=hist['open'],
+        high=hist['high'],
+        low=hist['low'],
+        close=hist['close']
     )])
     
     fig.update_layout(
         title=f"{stock_data.get('name', 'Stock')} Price Chart",
         xaxis_title="Date",
-        yaxis_title="Price (HKD)",
+        yaxis_title="Price (USD)",
         template="plotly_dark",
         height=400
     )
@@ -35,7 +36,8 @@ def plot_portfolio_allocation(holdings: List[Dict]) -> go.Figure:
         return go.Figure()
     
     labels = [h['name'] for h in holdings]
-    values = [h['value'] for h in holdings]
+    # Use 'current_value' if available, otherwise fall back to 'value'
+    values = [h.get('current_value', h.get('value', 0)) for h in holdings]
     
     fig = go.Figure(data=[go.Pie(
         labels=labels,

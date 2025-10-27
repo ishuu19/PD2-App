@@ -5,40 +5,66 @@ import database.models as db
 from config import constants
 
 def calculate_portfolio_value(user_id: str, all_stock_data: Dict) -> Dict:
-    """Calculate total portfolio value and metrics"""
+    """Calculate total portfolio value and metrics with P&L tracking"""
     portfolio = db.get_portfolio(user_id)
     if not portfolio:
         return {}
     
     cash = portfolio.get('cash_balance', constants.INITIAL_CASH)
     holdings = portfolio.get('holdings', {})
+    holdings_details = portfolio.get('holdings_details', {})
     
     total_stock_value = 0
-    holdings_details = []
+    total_cost_basis = 0
+    total_unrealized_pnl = 0
+    holdings_list = []
     
     for ticker, quantity in holdings.items():
         if quantity > 0 and ticker in all_stock_data and all_stock_data[ticker]:
             stock_data = all_stock_data[ticker]
             current_price = stock_data.get('current_price', 0)
-            value = quantity * current_price
-            total_stock_value += value
+            current_value = quantity * current_price
+            total_stock_value += current_value
             
-            holdings_details.append({
+            # Get purchase details
+            holding_detail = holdings_details.get(ticker, {})
+            purchase_price = holding_detail.get('purchase_price', current_price)
+            purchase_date = holding_detail.get('purchase_date', 'Unknown')
+            
+            # Calculate P&L
+            cost_basis = quantity * purchase_price
+            total_cost_basis += cost_basis
+            
+            unrealized_pnl = current_value - cost_basis
+            total_unrealized_pnl += unrealized_pnl
+            
+            pnl_percent = (unrealized_pnl / cost_basis * 100) if cost_basis > 0 else 0
+            
+            holdings_list.append({
                 'ticker': ticker,
                 'name': stock_data.get('name', ticker),
                 'quantity': quantity,
                 'current_price': current_price,
-                'value': value,
-                'change_percent': stock_data.get('change_percent', 0)
+                'purchase_price': purchase_price,
+                'purchase_date': purchase_date,
+                'current_value': current_value,
+                'cost_basis': cost_basis,
+                'unrealized_pnl': unrealized_pnl,
+                'pnl_percent': pnl_percent,
+                'daily_change_percent': stock_data.get('change_percent', 0)
             })
     
     total_value = cash + total_stock_value
+    total_return_percent = (total_unrealized_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
     
     return {
         'cash': cash,
         'total_stock_value': total_stock_value,
+        'total_cost_basis': total_cost_basis,
+        'total_unrealized_pnl': total_unrealized_pnl,
+        'total_return_percent': total_return_percent,
         'total_value': total_value,
-        'holdings': holdings_details
+        'holdings': holdings_list
     }
 
 def calculate_portfolio_return(user_id: str) -> float:
@@ -82,7 +108,7 @@ def can_sell_stock(user_id: str, ticker: str, quantity: float) -> tuple[bool, st
     return True, "OK"
 
 def execute_buy(user_id: str, ticker: str, price: float, quantity: float) -> bool:
-    """Execute buy transaction"""
+    """Execute buy transaction with purchase price tracking"""
     # Check cash
     can_buy, msg = can_buy_stock(user_id, price, quantity)
     if not can_buy:
@@ -99,6 +125,10 @@ def execute_buy(user_id: str, ticker: str, price: float, quantity: float) -> boo
     holdings = portfolio.get('holdings', {})
     current_quantity = holdings.get(ticker, 0)
     holdings[ticker] = current_quantity + quantity
+    
+    # Update holdings details with purchase price
+    from datetime import datetime
+    db.update_holdings_details(user_id, ticker, price, datetime.utcnow(), quantity)
     
     # Save to database
     db.update_portfolio(user_id, {'cash_balance': new_cash, 'holdings': holdings})
@@ -140,3 +170,32 @@ def execute_sell(user_id: str, ticker: str, price: float, quantity: float) -> bo
     db.create_transaction(user_id, ticker, 'sell', quantity, price)
     
     return True
+
+def refresh_portfolio_data(user_id: str) -> Dict:
+    """Refresh all stock data for portfolio and update last refresh time"""
+    import services.stock_data as stock_service
+    from datetime import datetime, timedelta
+    
+    portfolio = db.get_portfolio(user_id)
+    if not portfolio:
+        return {}
+    
+    holdings = portfolio.get('holdings', {})
+    if not holdings:
+        return {}
+    
+    # Get fresh data for all holdings
+    tickers = list(holdings.keys())
+    all_stock_data = stock_service.get_multiple_stocks(tickers, use_cache=False)
+    
+    # Update last refresh time
+    db.update_portfolio_refresh_time(user_id)
+    
+    # Calculate updated portfolio value
+    portfolio_value = calculate_portfolio_value(user_id, all_stock_data)
+    
+    return {
+        'portfolio_value': portfolio_value,
+        'last_refresh': datetime.utcnow(),
+        'stocks_refreshed': len([t for t in tickers if t in all_stock_data and all_stock_data[t]])
+    }

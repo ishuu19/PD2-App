@@ -27,9 +27,10 @@ def get_ai_response(prompt: str, system_prompt: Optional[str] = None,
     
     # Get fresh response from HKBU GenAI API
     api_key = keys.get_genai_api_key()
-    endpoint = keys.get_genai_endpoint()
+    base_endpoint = keys.get_genai_endpoint()
+    model_name = keys.get_genai_model()
     
-    if not api_key or not endpoint:
+    if not api_key or not base_endpoint:
         return "AI API not configured."
     
     try:
@@ -39,29 +40,35 @@ def get_ai_response(prompt: str, system_prompt: Optional[str] = None,
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         
-        # Call HKBU GenAI API
+        # Call HKBU GenAI API - Try multiple authentication methods
         headers = {
             "Content-Type": "application/json",
-            "Ocp-Apim-Subscription-Key": api_key
+            "api-key": api_key,
+            "Authorization": f"Bearer {api_key}"
         }
         
-        # HKBU GenAI API format
+        # HKBU GenAI API format - Azure OpenAI compatible
         payload = {
-            "model": "gpt-4",
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": False
         }
         
-        # HKBU GenAI endpoint is already complete, no need to append /chat/completions
-        response = requests.post(endpoint, json=payload, headers=headers)
+        # Construct the correct endpoint: /openai/deployments/{modelDeploymentName}/chat/completions
+        endpoint = f"{base_endpoint}/openai/deployments/{model_name}/chat/completions?api-version=v1"
+        
+        response = requests.post(endpoint, json=payload, headers=headers, timeout=60)
         
         if response.status_code == 200:
-            result = response.json()['choices'][0]['message']['content']
-            # Cache response
-            db.cache_ai_response(query_hash, result)
-            return result
+            response_json = response.json()
+            result = response_json.get('choices', [{}])[0].get('message', {}).get('content', '')
+            if result:
+                # Cache response
+                db.cache_ai_response(query_hash, result)
+                return result
+            else:
+                return f"AI response format error: {response_json}"
         else:
             return f"Error generating AI response: {response.status_code} - {response.text}"
     except Exception as e:

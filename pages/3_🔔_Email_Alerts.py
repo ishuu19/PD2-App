@@ -55,14 +55,18 @@ with col2:
     email_address = st.text_input("Email Address", value=db.get_user(user_id).get('email', ''))
 
 if st.button("📧 Create Alert", type="primary"):
-    if selected_ticker and alert_criteria and threshold and email_address:
-        alert_id = db.create_alert(user_id, selected_ticker, alert_criteria, threshold)
-        if alert_id:
-            st.success("Alert created successfully!")
-        else:
-            st.error("Failed to create alert")
-    else:
-        st.warning("Please fill in all fields")
+    with st.spinner("📧 Creating alert..."):
+        try:
+            if selected_ticker and alert_criteria and threshold and email_address:
+                alert_id = db.create_alert(user_id, selected_ticker, alert_criteria, threshold)
+                if alert_id:
+                    st.success("Alert created successfully!")
+                else:
+                    st.error("Failed to create alert")
+            else:
+                st.warning("Please fill in all fields")
+        except Exception as e:
+            st.error(f"Error creating alert: {str(e)}")
 
 # Existing Alerts
 st.header("Your Alerts")
@@ -86,16 +90,28 @@ if alerts:
             with col3:
                 if alert['active']:
                     if st.button("Deactivate", key=f"deactivate_{alert['_id']}"):
-                        db.update_alert(str(alert['_id']), {'active': False})
-                        st.rerun()
+                        with st.spinner("Deactivating alert..."):
+                            try:
+                                db.update_alert(str(alert['_id']), {'active': False})
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error deactivating alert: {str(e)}")
                 else:
                     if st.button("Activate", key=f"activate_{alert['_id']}"):
-                        db.update_alert(str(alert['_id']), {'active': True})
-                        st.rerun()
+                        with st.spinner("Activating alert..."):
+                            try:
+                                db.update_alert(str(alert['_id']), {'active': True})
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error activating alert: {str(e)}")
                 
                 if st.button("Delete", key=f"delete_{alert['_id']}"):
-                    db.delete_alert(str(alert['_id']))
-                    st.rerun()
+                    with st.spinner("Deleting alert..."):
+                        try:
+                            db.delete_alert(str(alert['_id']))
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting alert: {str(e)}")
 else:
     st.info("No alerts configured. Create one above!")
 
@@ -106,27 +122,32 @@ if alerts:
     preview_alert = st.selectbox("Select Alert to Preview", alerts, format_func=lambda x: f"{x['ticker']} - {x['criteria']}")
     
     if st.button("Generate Email Preview", type="primary"):
-        if preview_alert and selected_ticker in all_stocks_data:
-            stock_data = all_stocks_data[selected_ticker]
-            
-            alert_details = {
-                'threshold': preview_alert['threshold'],
-                'current_value': stock_data['current_price'],
-                'change': stock_data['change_percent']
-            }
-            
-            with st.spinner("Generating AI email..."):
-                email_content = ai_service.generate_email_content(
-                    preview_alert['criteria'],
-                    stock_data,
-                    alert_details
-                )
-                
-                st.markdown("### Generated Email")
-                st.markdown(email_content)
-                
-                st.markdown("---")
-                st.caption("This is a preview. Actual emails will be sent when alerts trigger.")
+        with st.spinner("📧 Generating AI email preview... This may take a moment."):
+            try:
+                if preview_alert and selected_ticker in all_stocks_data:
+                    stock_data = all_stocks_data[selected_ticker]
+                    
+                    alert_details = {
+                        'threshold': preview_alert['threshold'],
+                        'current_value': stock_data['current_price'],
+                        'change': stock_data['change_percent']
+                    }
+                    
+                    email_content = ai_service.generate_email_content(
+                        preview_alert['criteria'],
+                        stock_data,
+                        alert_details
+                    )
+                    
+                    st.markdown("### Generated Email")
+                    st.markdown(email_content)
+                    
+                    st.markdown("---")
+                    st.caption("This is a preview. Actual emails will be sent when alerts trigger.")
+                else:
+                    st.warning("Please select a stock ticker first to generate email preview.")
+            except Exception as e:
+                st.error(f"Error generating email preview: {str(e)}")
 
 # Alert Statistics
 st.header("Alert Statistics")

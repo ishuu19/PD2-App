@@ -74,7 +74,9 @@ def create_portfolio(user_id: str) -> bool:
         "user_id": user_id,
         "cash_balance": constants.INITIAL_CASH,
         "holdings": {},
-        "created_at": datetime.utcnow()
+        "holdings_details": {},  # Track purchase prices and dates
+        "created_at": datetime.utcnow(),
+        "last_refresh": datetime.utcnow()
     })
     return True
 
@@ -94,6 +96,62 @@ def update_portfolio(user_id: str, updates: Dict) -> bool:
     
     db.portfolios.update_one({"user_id": user_id}, {"$set": updates})
     return True
+
+def update_portfolio_refresh_time(user_id: str) -> bool:
+    """Update last refresh time for portfolio"""
+    db = conn.get_database()
+    if db is None:
+        return False
+    
+    db.portfolios.update_one(
+        {"user_id": user_id}, 
+        {"$set": {"last_refresh": datetime.utcnow()}}
+    )
+    return True
+
+def get_holdings_details(user_id: str) -> Dict:
+    """Get detailed holdings with purchase prices"""
+    portfolio = get_portfolio(user_id)
+    if not portfolio:
+        return {}
+    
+    return portfolio.get('holdings_details', {})
+
+def update_holdings_details(user_id: str, ticker: str, purchase_price: float, purchase_date: datetime, quantity: float) -> bool:
+    """Update holdings details with purchase information"""
+    db = conn.get_database()
+    if db is None:
+        return False
+    
+    portfolio = get_portfolio(user_id)
+    if not portfolio:
+        return False
+    
+    holdings_details = portfolio.get('holdings_details', {})
+    
+    if ticker in holdings_details:
+        # Update existing holding (average price calculation)
+        existing = holdings_details[ticker]
+        total_quantity = existing['quantity'] + quantity
+        total_cost = (existing['quantity'] * existing['purchase_price']) + (quantity * purchase_price)
+        avg_price = total_cost / total_quantity
+        
+        holdings_details[ticker] = {
+            'quantity': total_quantity,
+            'purchase_price': avg_price,
+            'purchase_date': existing['purchase_date'],  # Keep original date
+            'last_updated': datetime.utcnow()
+        }
+    else:
+        # New holding
+        holdings_details[ticker] = {
+            'quantity': quantity,
+            'purchase_price': purchase_price,
+            'purchase_date': purchase_date,
+            'last_updated': datetime.utcnow()
+        }
+    
+    return update_portfolio(user_id, {'holdings_details': holdings_details})
 
 def update_holding(user_id: str, ticker: str, quantity: float):
     """Update stock holding"""
@@ -256,3 +314,43 @@ def cache_ai_response(query_hash: str, response: str):
         }},
         upsert=True
     )
+
+# ===== TOKEN MANAGEMENT =====
+
+def save_tokens(user_id: str, access_token: str, refresh_token: str):
+    """Save user tokens to database"""
+    db = conn.get_database()
+    if db is None:
+        return False
+    
+    db.user_tokens.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "updated_at": datetime.utcnow()
+        }},
+        upsert=True
+    )
+    return True
+
+def get_tokens(user_id: str) -> Optional[Dict]:
+    """Get user tokens from database"""
+    db = conn.get_database()
+    if db is None:
+        return None
+    
+    token_data = db.user_tokens.find_one({"user_id": user_id})
+    if token_data:
+        # Remove MongoDB _id field
+        token_data.pop("_id", None)
+    return token_data
+
+def delete_tokens(user_id: str) -> bool:
+    """Delete user tokens from database (logout)"""
+    db = conn.get_database()
+    if db is None:
+        return False
+    
+    db.user_tokens.delete_one({"user_id": user_id})
+    return True
