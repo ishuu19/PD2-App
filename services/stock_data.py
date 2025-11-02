@@ -111,7 +111,7 @@ def _download_top_stocks_data():
             _dbg(f"[{ticker}] Raw data dtypes:\n{df.dtypes}")
 
             # Normalize columns and index
-                    df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
+            df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
             if 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date'])
                 df = df.set_index('date')
