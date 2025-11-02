@@ -77,11 +77,7 @@ def show_login_register():
                     if user_id:
                         user = db.get_user(user_id)
                         auth.login_user(user_id, username, user.get('email', ''))
-                        # Store user_id in session state for persistence
-                        st.session_state.persistent_user_id = user_id
                         st.success("Login successful! Redirecting to Dashboard...")
-                        # Give time for state to be saved
-                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error("Invalid username or password")
