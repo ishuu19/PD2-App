@@ -195,12 +195,12 @@ def _download_individual_stocks(tickers: List[str]) -> Dict:
                 stocks_data[ticker] = stock_data
                 print(f"  ✓ {ticker}: ${stock_data['current_price']:.2f}")
         
-            except Exception as e:
-                print(f"  ✗ Failed to download {ticker}: {str(e)}")
-                continue
-        
+        except Exception as e:
+            print(f"  ✗ Failed to download {ticker}: {str(e)}")
+            continue
+    
     print(f"Successfully processed {len(stocks_data)} stocks individually")
-        return stocks_data
+    return stocks_data
 
 def _should_refresh_data():
     """Check if data should be refreshed (after midnight or first load)"""
