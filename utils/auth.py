@@ -222,15 +222,40 @@ def login_user(user_id: str, username: str, email: str):
 def logout_user():
     """Clear user session and tokens
     
-    SECURITY: Only clears session_state. No database cleanup needed
-    since we don't store tokens in database anymore.
-    Note: device_id is NOT cleared to maintain uniqueness for this browser session.
+    SECURITY: Completely wipes all session data to prevent data leakage between users.
+    This is critical to ensure different users cannot see each other's data.
     """
-    # Clear session state
-    keys_to_clear = ['user_id', 'username', 'email', 'access_token', 'refresh_token']
+    # CRITICAL SECURITY: Clear ALL session state to prevent data leakage
+    # List of all known session state keys that must be cleared
+    keys_to_clear = [
+        # Authentication state
+        'user_id', 'username', 'email', 
+        'access_token', 'refresh_token',
+        'device_id', 'client_ip',
+        'auth_initialized',
+        # App-specific data
+        'stocks_loaded', 'portfolio_refreshed', 'chatbot_open',
+        'chat_history',
+        'stock_dfs', 'combined_df',
+        'top_stocks_data', 'last_refresh_time',
+        'stocks_data', 'session_id',
+    ]
+    
+    # Clear all specified keys
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
+    
+    # CRITICAL: Force Streamlit to completely reset session
+    # This ensures absolutely no residual data persists
+    # Clear any remaining session state we might have missed
+    # This is a nuclear option but necessary for security
+    for key in list(st.session_state.keys()):
+        if key not in ['_state', '_session_state']:  # Don't clear internal Streamlit state
+            try:
+                del st.session_state[key]
+            except:
+                pass
 
 def get_user_id():
     """Get current user ID"""
