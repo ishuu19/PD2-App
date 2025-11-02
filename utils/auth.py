@@ -4,15 +4,13 @@ import jwt
 from datetime import datetime, timedelta
 import os
 import database.models as db
-import json
-import pickle
 
 # Secret key for JWT signing
 SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'default_secret_key_change_in_production')
 
 # Token expiration times
 ACCESS_TOKEN_EXPIRY = timedelta(hours=1)  # Short-lived access token
-REFRESH_TOKEN_EXPIRY = timedelta(days=7)  # Long-lived refresh token
+REFRESH_TOKEN_EXPIRY = timedelta(hours=1)  # Same as access token - enforce 1 hour logout
 
 def _generate_token(user_id: str, username: str, email: str, expiry: timedelta) -> str:
     """Generate a JWT token"""
@@ -66,29 +64,12 @@ def _get_persistent_user_id():
     if 'persistent_user_id' in st.session_state and st.session_state.persistent_user_id:
         return st.session_state.persistent_user_id
     
-    # Check file-based storage (survives page refresh)
-    user_file = '.streamlit/.user_id'
-    if os.path.exists(user_file):
-        try:
-            with open(user_file, 'r') as f:
-                user_id = f.read().strip()
-                if user_id:
-                    st.session_state.persistent_user_id = user_id
-                    return user_id
-        except:
-            pass
-    
+    # Note: Streamlit creates a unique session per browser tab/window with isolated session state
+    # Each user gets their own session, so multiple users can login simultaneously without conflicts
     # Check URL parameters as fallback (for redirect after login)
     if 'user_id' in st.query_params and st.query_params.user_id:
         user_id = st.query_params.user_id
         st.session_state.persistent_user_id = user_id
-        # Save to file for persistence
-        try:
-            os.makedirs('.streamlit', exist_ok=True)
-            with open(user_file, 'w') as f:
-                f.write(user_id)
-        except:
-            pass
         return user_id
     
     return None
@@ -97,13 +78,8 @@ def _set_persistent_user_id(user_id):
     """Set persistent user ID in session state and file"""
     st.session_state.persistent_user_id = user_id
     
-    # Save to file for persistence across refreshes
-    try:
-        os.makedirs('.streamlit', exist_ok=True)
-        with open('.streamlit/.user_id', 'w') as f:
-            f.write(user_id)
-    except:
-        pass
+    # Note: Streamlit creates isolated sessions per browser tab/window
+    # No need for file-based storage since Streamlit handles session isolation
 
 def is_logged_in():
     """Check if user is logged in with persistent authentication across page refreshes"""
@@ -256,7 +232,7 @@ def _clear_session_state():
 
 def login_user(user_id: str, username: str, email: str):
     """Set user session with access and refresh tokens"""
-    # Generate tokens (1 hour access token, 7 days refresh token)
+    # Generate tokens (both expire after 1 hour - auto logout enforced)
     access_token = _generate_token(user_id, username, email, ACCESS_TOKEN_EXPIRY)
     refresh_token = _generate_token(user_id, username, email, REFRESH_TOKEN_EXPIRY)
     
@@ -280,14 +256,6 @@ def logout_user():
     # Delete from database
     if user_id:
         db.delete_tokens(user_id)
-    
-    # Clear persistent user ID file
-    user_file = '.streamlit/.user_id'
-    if os.path.exists(user_file):
-        try:
-            os.remove(user_file)
-        except:
-            pass
     
     # Clear persistent user ID from session
     if 'persistent_user_id' in st.session_state:

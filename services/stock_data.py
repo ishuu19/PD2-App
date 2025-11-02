@@ -16,7 +16,7 @@ DEBUG_STOCKS = True
 def _dbg(msg: str):
     try:
         if DEBUG_STOCKS:
-            pass  # Removed print statement
+            print(msg)
     except Exception:
         pass
 
@@ -42,7 +42,7 @@ def _download_top_stocks_data():
     tickers = constants.HK_STOCKS
     stocks_data = {}
     
-    _dbg(f"Downloading data for {len(tickers)} stocks using bulk download...")
+    print(f"Downloading data for {len(tickers)} stocks using bulk download...")
 
     # Download 5+ years of daily data (since 2018-01-01)
     start_date = "2018-01-01"
@@ -71,11 +71,12 @@ def _download_top_stocks_data():
         # Check if we got any data
         if data is None or data.empty or len(data) == 0:
             _dbg("Bulk download returned empty data, falling back to individual downloads...")
+            print("Bulk download returned empty data, falling back to individual downloads...")
             return _download_individual_stocks(tickers)
             
     except Exception as e:
         _dbg(f"Bulk download failed: {str(e)}")
-        _dbg(f"Bulk download failed: {str(e)}, falling back to individual downloads...")
+        print(f"Bulk download failed: {str(e)}, falling back to individual downloads...")
         return _download_individual_stocks(tickers)
 
     # Per-ticker DataFrames in memory
@@ -96,12 +97,12 @@ def _download_top_stocks_data():
                     _dbg(f"[{ticker}] Extracted from fallback, shape: {df.shape}")
                 except Exception as e:
                     _dbg(f"[{ticker}] Failed to extract: {str(e)}")
-                    _dbg(f"  No data for {ticker}")
+                    print(f"  No data for {ticker}")
                     continue
                 
             if df.empty:
                 _dbg(f"[{ticker}] DataFrame is empty")
-                _dbg(f"  No data for {ticker}")
+                print(f"  No data for {ticker}")
                 continue
 
             # Debug: Print raw data before processing
@@ -110,7 +111,7 @@ def _download_top_stocks_data():
             _dbg(f"[{ticker}] Raw data dtypes:\n{df.dtypes}")
 
             # Normalize columns and index
-            df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
+                    df.columns = [col.lower() if isinstance(col, str) else str(col).lower() for col in df.columns]
             if 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date'])
                 df = df.set_index('date')
@@ -126,10 +127,10 @@ def _download_top_stocks_data():
             stock_data = _process_stock_data(ticker, df)
             if stock_data:
                 stocks_data[ticker] = stock_data
-                _dbg(f"  Loaded {ticker}: {len(df)} rows")
+                print(f"  Loaded {ticker}: {len(df)} rows")
 
         except Exception as e:
-            _dbg(f"  Failed to process {ticker}: {str(e)}")
+            print(f"  Failed to process {ticker}: {str(e)}")
             continue
 
     # Combined DataFrame in memory (optional)
@@ -151,18 +152,18 @@ def _download_top_stocks_data():
     except Exception:
         pass
 
-    _dbg(f"\nSuccessfully processed {len(stocks_data)} stocks")
+    print(f"\nSuccessfully processed {len(stocks_data)} stocks")
     return stocks_data
 
 def _download_individual_stocks(tickers: List[str]) -> Dict:
     """Fallback method: Download stocks individually with delays"""
     stocks_data = {}
     
-    _dbg(f"Downloading {len(tickers)} stocks individually...")
+    print(f"Downloading {len(tickers)} stocks individually...")
     
     for i, ticker in enumerate(tickers):
         try:
-            _dbg(f"Downloading {ticker} ({i+1}/{len(tickers)})...")
+            print(f"Downloading {ticker} ({i+1}/{len(tickers)})...")
             
             # Add delay to avoid rate limiting
             if i > 0:
@@ -178,7 +179,7 @@ def _download_individual_stocks(tickers: List[str]) -> Dict:
             )
             
             if data.empty:
-                _dbg(f"  No data for {ticker}")
+                print(f"  No data for {ticker}")
                 continue
             
             # Process the data
@@ -192,14 +193,14 @@ def _download_individual_stocks(tickers: List[str]) -> Dict:
             stock_data = _process_stock_data(ticker, df)
             if stock_data:
                 stocks_data[ticker] = stock_data
-                _dbg(f"  ✓ {ticker}: ${stock_data['current_price']:.2f}")
+                print(f"  ✓ {ticker}: ${stock_data['current_price']:.2f}")
         
-        except Exception as e:
-            _dbg(f"  ✗ Failed to download {ticker}: {str(e)}")
-            continue
-    
-    _dbg(f"Successfully processed {len(stocks_data)} stocks individually")
-    return stocks_data
+            except Exception as e:
+                print(f"  ✗ Failed to download {ticker}: {str(e)}")
+                continue
+        
+    print(f"Successfully processed {len(stocks_data)} stocks individually")
+        return stocks_data
 
 def _should_refresh_data():
     """Check if data should be refreshed (after midnight or first load)"""
@@ -298,7 +299,7 @@ def _fetch_single_stock_yfinance(ticker: str) -> Optional[Dict]:
         _dbg(f"[{ticker}] result summary: price={result['current_price']}, change%={result['change_percent']}, vol={result['volume']}")
         return result
     except Exception as e:
-        _dbg(f"Error fetching {ticker}: {str(e)}")
+        print(f"Error fetching {ticker}: {str(e)}")
         return None
 
 def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
@@ -311,7 +312,7 @@ def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
     
     # Otherwise fetch it individually using bulk download for efficiency
     try:
-        _dbg(f"Fetching individual stock data for {ticker}...")
+        print(f"Fetching individual stock data for {ticker}...")
         data = yf.download(
             ticker, 
             start="2018-01-01", 
@@ -322,7 +323,7 @@ def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
         )
         
         if data.empty:
-            _dbg(f"No data found for {ticker}")
+            print(f"No data found for {ticker}")
             return None
         
         # Process the data
@@ -336,7 +337,7 @@ def get_stock_data(ticker: str, use_cache: bool = True) -> Optional[Dict]:
         return _process_stock_data(ticker, df)
         
     except Exception as e:
-        _dbg(f"Error fetching {ticker}: {str(e)}")
+        print(f"Error fetching {ticker}: {str(e)}")
         return None
 
 def _process_stock_data(ticker: str, df: pd.DataFrame) -> Optional[Dict]:
@@ -454,7 +455,7 @@ def _process_stock_data(ticker: str, df: pd.DataFrame) -> Optional[Dict]:
             'last_updated': datetime.now()
         }
     except Exception as e:
-        _dbg(f"Error processing {ticker}: {str(e)}")
+        print(f"Error processing {ticker}: {str(e)}")
         return None
 
 def get_multiple_stocks(tickers: List[str], use_cache: bool = True) -> Dict[str, Optional[Dict]]:

@@ -38,18 +38,23 @@ def authenticate_user(username: str, password: str) -> Optional[str]:
     """Authenticate user and return user_id"""
     db = conn.get_database()
     if db is None:
+        print("❌ Database connection failed - cannot authenticate user")
         return None
     
     try:
         user = db.users.find_one({"username": username})
         if not user:
+            print(f"❌ User '{username}' not found in database")
             return None
         
         if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
+            print(f"✅ User '{username}' authenticated successfully")
             return str(user["_id"])
         else:
+            print(f"❌ Invalid password for user '{username}'")
             return None
     except Exception as e:
+        print(f"❌ Error during authentication: {str(e)}")
         return None
 
 def get_user(user_id: str) -> Optional[Dict]:
@@ -272,10 +277,12 @@ def get_users_with_active_alerts() -> List[Dict]:
                         "username": user.get("username")
                     })
             except Exception as e:
+                print(f"Error converting user_id {user_id} to ObjectId: {e}")
                 continue
         
         return users
     except Exception as e:
+        print(f"Error in get_users_with_active_alerts: {e}")
         return []
 
 def update_alert_last_triggered(alert_id: str):
