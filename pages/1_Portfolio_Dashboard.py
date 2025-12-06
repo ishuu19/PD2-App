@@ -289,25 +289,38 @@ with trading_tabs[1]:
             holding = next((h for h in holdings if h['ticker'] == selected_sell_ticker), None)
             
             if holding:
+                # Always get the current market price from stock data, not from holding
                 stock_data = all_stocks_data.get(selected_sell_ticker, {})
-                current_price = stock_data.get('current_price', holding['current_price'])
                 
-                st.info(f"**{holding['name']} ({selected_sell_ticker})** - You own {holding['quantity']} shares")
-                st.info(f"Current Price: ${current_price:.2f} USD")
-                
-                max_quantity = int(holding['quantity'])
-                quantity = st.number_input("Quantity to Sell", min_value=1, max_value=max_quantity, value=1, key="sell_quantity")
-                
-                total_proceeds = quantity * current_price
-                
-                st.metric("Total Proceeds", f"${total_proceeds:,.0f} USD")
-                
-                if st.button("💰 Sell Stock", type="primary"):
-                    if portfolio_service.execute_sell(user_id, selected_sell_ticker, current_price, quantity):
-                        st.success(f"Successfully sold {quantity} shares of {holding['name']}!")
-                        st.rerun()
+                # Ensure we have current price from stock data, not purchase price
+                if stock_data and 'current_price' in stock_data:
+                    current_price = stock_data['current_price']
+                else:
+                    # If stock data is not available, fetch it fresh
+                    fresh_stock_data = stock_service.get_stock_data(selected_sell_ticker, use_cache=False)
+                    if fresh_stock_data and 'current_price' in fresh_stock_data:
+                        current_price = fresh_stock_data['current_price']
                     else:
-                        st.error("Transaction failed.")
+                        st.error(f"Unable to fetch current price for {selected_sell_ticker}. Please try again.")
+                        current_price = None
+                
+                if current_price:
+                    st.info(f"**{holding['name']} ({selected_sell_ticker})** - You own {holding['quantity']} shares")
+                    st.info(f"Current Price: ${current_price:.2f} USD")
+                    
+                    max_quantity = int(holding['quantity'])
+                    quantity = st.number_input("Quantity to Sell", min_value=1, max_value=max_quantity, value=1, key="sell_quantity")
+                    
+                    total_proceeds = quantity * current_price
+                    
+                    st.metric("Total Proceeds", f"${total_proceeds:,.0f} USD")
+                    
+                    if st.button("💰 Sell Stock", type="primary"):
+                        if portfolio_service.execute_sell(user_id, selected_sell_ticker, current_price, quantity):
+                            st.success(f"Successfully sold {quantity} shares of {holding['name']}!")
+                            st.rerun()
+                        else:
+                            st.error("Transaction failed.")
     else:
         st.info("You don't have any holdings to sell.")
 
